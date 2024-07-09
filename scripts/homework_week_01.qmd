@@ -1,0 +1,29 @@
+---
+title: "Homework - Week 1"
+format: html
+---
+
+### Question 1
+Suppose the globe tossing data had turned out to be 3 water and 11 land. Construct the posterior distribution
+```{r}
+library(ggplot2)
+
+# create p_grid
+p_grid <- seq(from = 0, to = 1, length.out = 100)
+
+# create prior distributoin
+prior <- rep(1, 20)
+
+# compute likelihood at each value in the grid
+# data for globe tossing with 3 water and 11 land
+likelihood <- dbinom(3, size = 14, prob = p_grid)
+
+# calculate posterior 
+unstd.posterior <- likelihood * prior
+posterior <- unstd.posterior / sum(unstd.posterior)
+
+ggplot(mapping = aes(x = p_grid, y = posterior)) +
+  geom_line() +
+  theme_minimal()
+```
+
