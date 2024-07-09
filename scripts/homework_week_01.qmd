@@ -27,3 +27,5 @@ ggplot(mapping = aes(x = p_grid, y = posterior)) +
   theme_minimal()
 ```
 
+### Question 2
+Using the posterior distribution from 1, compute the posterior predictive distribution for the next 5 tosses of the same globe. I recommend you use the sampling method.
