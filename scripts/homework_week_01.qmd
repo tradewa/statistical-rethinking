@@ -5,6 +5,8 @@ format: html
 
 ### Question 1
 Suppose the globe tossing data had turned out to be 3 water and 11 land. Construct the posterior distribution
+
+Gharda's code version
 ```{r}
 library(ggplot2)
 
@@ -26,6 +28,28 @@ ggplot(mapping = aes(x = p_grid, y = posterior)) +
   geom_line() +
   theme_minimal()
 ```
+Homework solution's version 1
+```{r}
+library(ggplot2)
+
+compute_posterior <- function(W, L, poss = c(0, 0.25, 0.5, 0.75, 1)){
+  ways <- sapply(poss, function(q) q^W * (1-q)^L)
+  post <- ways / sum(ways)
+  data.frame(poss, ways, post = round(post, 3))
+}
+
+p_grid <- seq(from = 0, to = 1, len = 100)
+post <- compute_posterior(3, 11, poss=p_grid)
+
+ggplot(mapping = aes(x = p_grid, y = post$post)) +
+  geom_line() +
+  theme_minimal()
+```
+Homework solution's version 2
+```{r}
+curve(dbeta(x, 3+1, 11+1), from = 0, to = 1, xlab = "p")
+```
 
 ### Question 2
 Using the posterior distribution from 1, compute the posterior predictive distribution for the next 5 tosses of the same globe. I recommend you use the sampling method.
+

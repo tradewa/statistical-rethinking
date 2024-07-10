@@ -99,6 +99,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="question-1" class="level3">
 <h3 class="anchored" data-anchor-id="question-1">Question 1</h3>
 <p>Suppose the globe tossing data had turned out to be 3 water and 11 land. Construct the posterior distribution</p>
+<p>Gharda’s code version</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
@@ -123,6 +124,41 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div>
 <figure class="figure">
 <p><img src="homework_week_01_files/figure-html/unnamed-chunk-1-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Homework solution’s version 1</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>compute_posterior <span class="ot">&lt;-</span> <span class="cf">function</span>(W, L, <span class="at">poss =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="fl">0.25</span>, <span class="fl">0.5</span>, <span class="fl">0.75</span>, <span class="dv">1</span>)){</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  ways <span class="ot">&lt;-</span> <span class="fu">sapply</span>(poss, <span class="cf">function</span>(q) q<span class="sc">^</span>W <span class="sc">*</span> (<span class="dv">1</span><span class="sc">-</span>q)<span class="sc">^</span>L)</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  post <span class="ot">&lt;-</span> ways <span class="sc">/</span> <span class="fu">sum</span>(ways)</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">data.frame</span>(poss, ways, <span class="at">post =</span> <span class="fu">round</span>(post, <span class="dv">3</span>))</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>p_grid <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="at">from =</span> <span class="dv">0</span>, <span class="at">to =</span> <span class="dv">1</span>, <span class="at">len =</span> <span class="dv">100</span>)</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>post <span class="ot">&lt;-</span> <span class="fu">compute_posterior</span>(<span class="dv">3</span>, <span class="dv">11</span>, <span class="at">poss=</span>p_grid)</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(<span class="at">mapping =</span> <span class="fu">aes</span>(<span class="at">x =</span> p_grid, <span class="at">y =</span> post<span class="sc">$</span>post)) <span class="sc">+</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>() <span class="sc">+</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="homework_week_01_files/figure-html/unnamed-chunk-2-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Homework solution’s version 2</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">curve</span>(<span class="fu">dbeta</span>(x, <span class="dv">3</span><span class="sc">+</span><span class="dv">1</span>, <span class="dv">11</span><span class="sc">+</span><span class="dv">1</span>), <span class="at">from =</span> <span class="dv">0</span>, <span class="at">to =</span> <span class="dv">1</span>, <span class="at">xlab =</span> <span class="st">"p"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="homework_week_01_files/figure-html/unnamed-chunk-3-1.png" class="img-fluid figure-img" width="672"></p>
 </figure>
 </div>
 </div>
