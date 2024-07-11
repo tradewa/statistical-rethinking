@@ -53,6 +53,7 @@ curve(dbeta(x, 3+1, 11+1), from = 0, to = 1, xlab = "p")
 ### Question 2
 Using the posterior distribution from 1, compute the posterior predictive distribution for the next 5 tosses of the same globe. I recommend you use the sampling method.
 
+Gharda's solution
 ```{r}
 sim_globe <- function(p = 0.7, N = 9){
   sample(c("W", "L"), size = N, replace = TRUE, prob = c(p, 1-p))
@@ -60,5 +61,12 @@ sim_globe <- function(p = 0.7, N = 9){
 post_samples <- sample(posterior, 1e4, replace = TRUE)
 pred_post <- sapply(post_samples, function(p) sum(sim_globe(p, 10) == "W"))
 tab_post <- table(pred_post)
+```
+
+Homework's solution
+```{r}
+p_samples <- rbeta(1e4, 3+1, 11+1)
+W_sim <- rbinom(1e4, size = 5, p = p_samples)
+plot(table(W_sim))
 ```
 
