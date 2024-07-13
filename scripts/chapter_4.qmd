@@ -1,0 +1,30 @@
+---
+title: "Chapter 4 - Geocentric Model"
+format: html
+---
+
+R code 4.1
+```{r}
+library(rethinking)
+pos <- replicate(1e4, sum(runif(16, -1, 1)))
+dens(pos)
+```
+
+R code 4.3
+```{r}
+growth <- replicate(1e4, prod(1 + runif(12, 0, 0.1)))
+dens(growth, norm.comp = TRUE)
+```
+
+R Code 4.4
+```{r}
+big <- replicate(1e4, prod(1 + runif(12, 0, 0.5)))
+dens(big, norm.comp = TRUE)
+```
+
+R code 4.5
+```{r}
+log.big <- replicate(1e4, log(prod(1 + runif(12, 0, 0.5))))
+dens(log.big, norm.comp = TRUE)
+```
+
