@@ -1,0 +1,112 @@
+---
+title: "Homework Week 2"
+format: html
+---
+
+:::question
+1. From the Howell1 dataset, consider only the people younger than 13 years old. Estimate the causal association between age and weight. Assume that age influences weight through two paths. First, age influences height, and height influences weight. Second, age directly influences weight through age-related changes in muscle growth and body proportions.
+:::
+
+```{r}
+rm(list = ls())
+library(rethinking)
+data("Howell1")
+d <- Howell1[Howell1$age < 13,]
+
+sim_HW <- function(A, cW = 0, cH = 0, bAH = 5, bHW = 0.5, bAW = 0.1){
+  N <- length(A)
+  H <- rnorm(N, bAH * A + cH)
+  W <- rnorm(N, bAW * A + bHW * H + cW)
+  data.frame(A, H, W)
+}
+
+d <- sim_HW(runif(100, 1, 12))
+plot(d$A, d$H, lwd = 2, col = 2)
+plot(d$A, d$W, lwd = 2, col = 2)
+plot(d$H, d$W, lwd = 2, col = 2)
+```
+
+:::question
+2. Estimate the total causal effect of each year of growth on weight
+:::
+```{r}
+rm(list = ls())
+library(rethinking)
+data("Howell1")
+d <- Howell1
+d <- d[d$age < 13, ]
+
+n <- 10
+a <- rnorm(n, 5, 1)
+b <- rnorm(n, 0, 10)
+plot(NULL, xlim = range(d$age), ylim = range(d$weight), xlab = "age", ylab = "weight")
+for(i in 1:n){
+  abline(a[i], b[i], lwd = 3, col = 2)
+}
+```
+
+```{r}
+m <- quap(
+  alist(
+    weight ~ dnorm(mu, sigma),
+    mu <- a + b * age,
+    a ~ dnorm(5, 1),
+    b ~ dnorm(0, 10),
+    sigma ~ dexp(1)
+  ),
+  data = list(weight = d$weight, age = d$age)
+)
+
+precis(m)
+```
+
+:::question
+OPTIONAL CHALLENGE. The data in data (0xboys) (rethinking package) are growth records for 26 boys measured over 9 periods. I want you to model their growth. Specifically, model the increments in growth from one period (Occasion in the data table) to the next. Each increment is simply the difference between height in one occasion and height in the previous occasion. Since none of these boys shrunk during the study, all of the growth increments are greater than zero. Estimate the posterior distribution of these increments. Constrain the distribution so it is always positive.
+:::
+
+```{r}
+# Loading the data
+rm(list = ls())
+library(rethinking)
+data("Oxboys")
+d <- Oxboys
+
+# Create new column delta
+# Calculate delta by finding the difference between occasion
+# Remove data with delta = NA
+d$delta <- NA
+for(i in 1:nrow(d)){
+  if(d$Occasion[i] > 1){
+    d$delta[i] <- d$height[i] - d$height[i-1]
+  }
+}
+d <- d[!is.na(d$delta), ]
+
+# Create simulated data for the model
+n <- 1e3
+alpha <- rnorm(n, 0, 0.1)
+sigma <- rexp(n, 3)
+delta_sim <- rlnorm(n, alpha, sigma)
+dens(delta_sim)
+
+# To constrain the distribution of the increments to be positive we can use log-normal measurements with 2 options
+# 1. Log variable first, do ordinary linear regression, and exponentiate back last
+# 2. Directly use log-normal regression
+m <- quap(
+  alist(
+    delta ~ dlnorm(alpha, sigma),
+    alpha ~ dnorm(0, 0.1),
+    sigma ~ dexp(3)
+  ), data = list(delta = d$delta)
+)
+
+# Plot posterior distribution of increments
+post <- extract.samples(m)
+dsim <- rlnorm(1e3, post$alpha, post$sigma)
+dens(dsim)
+
+# Plot posterior distribution sum over 8 occassions
+inc_sum <- sapply(1:1000, function(s) sum(rlnorm(8, post$alpha[s], post$sigma[s])))
+dens(inc_sum)
+```
+

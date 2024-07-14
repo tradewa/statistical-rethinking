@@ -5,31 +5,43 @@ format: html
 
 ### Easy problems
 
-**4E1.** In the model definition below, which line is the likelihood?
+:::question
+> **4E1.** In the model definition below, which line is the likelihood?
 
-$y_{i} \sim Normal(\mu, \sigma)$
-
-$\mu \sim Normal(0, 10)$
-
-$\sigma \sim Exponential(1)$
+\begin{align}
+  y_{i} &\sim \text{Normal}(\mu, \sigma) \\
+  \mu &\sim \text{Normal}(0, 10) \\
+  \sigma &\sim \text{Exponential}(1)
+\end{align}
+:::
 
 The answer is $y_{i}$
 
-**4E2.** In the model definition just above, how many parameters are in the posterior distribution?
+:::question
+> **4E2.** In the model definition just above, how many parameters are in the posterior distribution?
+:::
 
 2 which are $\mu$ and $\sigma$
 
-**4E3.** Using the model definition above, write down the appropriate for of Bayes' theorem that includes the proper likelihood and priors
+:::question
+> **4E3.** Using the model definition above, write down the appropriate for of Bayes' theorem that includes the proper likelihood and priors
+:::
 
-$Pr(\mu, \sigma | y) = \dfrac{Pr(y | \mu, \sigma)Pr(\mu)Pr(\sigma)}{\int \int Pr(y|\mu, \sigma)Pr(\mu)Pr(\sigma)d\mu d\sigma}$
+$$
+Pr(\mu, \sigma | y) = \dfrac{Pr(y | \mu, \sigma)Pr(\mu)Pr(\sigma)}{\int \int Pr(y|\mu, \sigma)Pr(\mu)Pr(\sigma)d\mu d\sigma}
+$$
 
 ### Medium problems
 
-**4M1.** For the model definition below simulate observed y values from the prior (not the posterior)
+:::question
+> **4M1.** For the model definition below simulate observed y values from the prior (not the posterior)
 
-$y_{i} \sim Normal(\mu, \sigma)$
-$\mu \sim Normal(0, 10)$
-$\sigma \sim Exponential(1)$
+\begin{align}
+  y_{i} &\sim \text{Normal}(\mu, \sigma) \\
+  \mu &\sim \text{Normal}(0, 10)$ \\
+  \sigma &\sim \text{Exponential}(1)
+\end{align}
+:::
 
 ```{r}
 library(rethinking)
@@ -234,20 +246,40 @@ m <- quap(
 
 precis(m)
 ```
+b. Begin with this plot: plot(height ~ weight, data = Howell1). Then use samples from the quadratic approximate posterior of the model in (a) to superimpose on the plot: (1) the predicted mean height as a function of weight, (2) the 97% interval for the mean, and (3) the 97% interval for predicted heights
 
+Gharda's first try
 ```{r}
 
 log_weight.seq <- log(seq(from = 1, to = 70, by = 1))
 mu <- link(m, data = data.frame(log_weight = log_weight.seq))
 mu.mean <- apply(mu, 2, mean)
-mu.PI <- apply(mu, 2, PI)
+mu.PI <- apply(mu, 2, PI, prob = 0.97)
 
 sim.height <- sim(m, data = list(log_weight = log_weight.seq))
-height.PI <- apply(sim.height, 2, PI)
+height.PI <- apply(sim.height, 2, PI, prob = 0.97)
 
 plot(height ~ weight, data = d, col = col.alpha(rangi2, 0.5))
 lines(exp(log_weight.seq), mu.mean)
 shade(mu.PI, exp(log_weight.seq))
 shade(height.PI, exp(log_weight.seq))
 ```
+
+Solution from the book with more manual steps
+```{r}
+post <- extract.samples(m)
+log_weight.seq <- log(seq(from = 1, to = 70, length.out = 1e3))
+
+mu <- sapply(log_weight.seq, function(z) mean(post$a + post$b * (z - xbar)))
+mu.ci <- sapply(log_weight.seq, function(z) HPDI(post$a + post$b * (z - xbar)))
+h.ci <- sapply(log_weight.seq, function(z) HPDI(rnorm(1e4, post$a + post$b * (z - xbar), post$sigma)))
+
+plot(height ~ weight, data = d, col = col.alpha("slateblue", 0.4))
+lines(exp(log_weight.seq), mu)
+lines(exp(log_weight.seq), mu.ci[1,], lty = 2)
+lines(exp(log_weight.seq), mu.ci[2,], lty = 2)
+lines(exp(log_weight.seq), h.ci[1,], lty = 2)
+lines(exp(log_weight.seq), h.ci[2,], lty = 2)
+```
+
 
