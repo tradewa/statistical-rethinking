@@ -1,0 +1,124 @@
+---
+title: "Chapter 3 - Practice"
+format: html
+---
+
+```{r}
+library(rethinking)
+
+p_grid <- seq(from = 0, to = 1, length.out = 1000)
+prior <- rep(1, 1000)
+likelihood <- dbinom(6, size = 9, prob = p_grid)
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior)
+set.seed(100)
+samples <- sample(p_grid, prob = posterior, replace = TRUE, size = 1e4)
+```
+
+Easy problems
+```{r}
+# 3E1. How much posterior probability lies below p = 0.2
+sum(samples < 0.2) / 1e4
+
+# 3E2. How much posterior probability lies above p = 0.8
+sum(samples > 0.8) / 1e4
+
+# 3E3. How much posterior probability lies between p = 0.2 and p = 0.8
+sum(samples > 0.2 & samples < 0.8) / 1e4
+
+# 3E4. 20% of the posterior probability lies below which value of p?
+quantile(samples, 0.2)
+
+# 3E5. 20% of the posterior probability lies above which value of p?
+quantile(samples, 0.8)
+
+# 3E6. Which value of p contain the narrowest interval equal to 66% of the posterior probability
+HPDI(samples, prob = 0.66)
+
+# 3E7. Which values of p contain 66% of the posterior probability, assuming equal posterior probability both below and above the interval?
+PI(samples, prob = 0.66)
+```
+
+Medium problems
+```{r}
+# 3M1. Suppose the globe tossing data had turned out to be 8 water in 15 tosses. Construct the posterior distribution, using grid approximation. Use the same flat prior as before
+p_grid <- seq(from = 0, to = 1, length.out = 1000)
+prior <- rep(1, 1000)
+likelihood <- dbinom(8, size = 15, prob = p_grid)
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior)
+
+# 3M2. Draw 10k samples from the grid approximation from above. Then use the samples to calculate the 90% HPDI for p.
+samples <- sample(p_grid, prob = posterior, size = 1e4, replace = TRUE)
+HPDI(samples, prob = 0.90)
+
+# 3M3. Construct a posterior predictive check for this model and data. This means simulate the distribution of samples, averaging over the posterior uncertainty in p. What is the probability of observing 8 water in 15 tosses
+sim_w <- rbinom(1e4, size = 15, prob = samples)
+sum(sim_w == 8) / 1e4
+simplehist(sim_w)
+
+# 3M4. Using the posterior distribution constructed from the new (8/15) data, now calculate the probability of observing 6 water in 9 tosses
+sim_w <- rbinom(1e4, size = 9, prob = samples)
+sum(sim_w == 6) / 1e4
+
+# 3M5. Start over at 3M1, but now use a prior that is zero below p = 0.5 and a constant above p = 0.5. This corresponds to prior infirmation that a mojarity of the Earth's surface is water. Repeat each problem above and compare the inferences. What difference does the better prior make? If it helps, compare inferences (using both priors) to the true value p = 0.7
+p_grid <- seq(from = 0, to = 1, length.out = 1000)
+prior <- ifelse(p_grid < 0.5, 0, 1)
+likelihood <- dbinom(8, size = 15, prob = p_grid)
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior)
+samples <- sample(p_grid, prob = posterior, replace = TRUE, size = 1e4)
+plot(posterior ~ p_grid, type = "l")
+
+HPDI(samples, prob = 0.9)
+
+sim_w <- rbinom(1e4, size = 15, prob = samples)
+sum(sim_w == 8) / 1e4
+simplehist(sim_w)
+```
+
+Hard problems
+```{r}
+library(ggplot2)
+
+rm(list = ls())
+data(homeworkch3)
+b <- sum(birth1) + sum(birth2)
+
+# 3H1. Using grid approximation, compute the posterior distribution for the probability of a birth being a boy. Assume a uniform prior probability. Which parameter value maximizes the posterior probability?
+p_grid <- seq(from = 0, to = 1, length.out = 1e3)
+prior <- rep(1, 1e3)
+likelihood <- dbinom(b, size = 200, prob = p_grid)
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior)
+p_grid[which.max(posterior)]
+
+# 3H2. Using the sample function, draw 10k random parameter values from the posterior distribution uyou calculated above. Use these samples to estimate the 50%, 89%, and 97% highest posterior density intervals
+samples <- sample(p_grid, prob = posterior, size = 1e4, replace = TRUE)
+HPDI(samples, prob = 0.5)
+HPDI(samples, prob = 0.89)
+HPDI(samples, prob = 0.97)
+
+# 3H3. Use rbinom to simulate 10k replicates of 200 births. You should end up with 10k numbers, each one a count of boys out of 200 births. Compare the distribution of predicted numbers of boys to the actual count in the data (111 boys out of 200 birth). There are many good ways to visualize the simulations, but the dens command is probably the easiest way. Does it look like the model fits the data well? That is, does the distribution of predictions include the actual observation as a central, likely outcome?
+sim_b <- rbinom(1e4, size = 200, prob = samples)
+ggplot() +
+  geom_density(mapping = aes(x = sim_b)) +
+  geom_vline(xintercept = b, linetype = "dotted", color = "red")
+
+# 3H4. Now compare 10k counts of boys from 100 simulated first borns only to the number of boys in the first birth, birth1. How does the model look in this light
+sim_b_100 <- rbinom(1e4, size = 100, prob = samples)
+ggplot() +
+  geom_density(mapping = aes(x = sim_b_100)) +
+  geom_vline(xintercept = sum(birth1), linetype = "dotted", color = "red") +
+  theme_classic()
+
+# 3H5. Compare 10k simulated counts of boys to only second births that followed girls
+b01 <- sum(birth2[birth1 == 0])
+sim_b01 <- rbinom(1e4, size = length(birth2[birth1 == 0]), prob = samples)
+ggplot() +
+  geom_density(mapping = aes(x = sim_b01)) +
+  geom_vline(xintercept = b01, linetype = "dotted", color = "red") +
+  theme_classic()
+
+```
+
