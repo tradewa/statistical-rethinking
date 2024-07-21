@@ -190,7 +190,7 @@ mtext("Counterfactual M on K")
 
 Counterfactual M on K by doubling M
 ```{r}
-sim_dat <- data.frame(M = (log(c(mean_M, mean_M * 2)) - mean(log(dcc$mass))) / sd(log(dcc$mass)))
+sim_dat <- data.frame(M = (log(c(15, 30)) - mean(log(dcc$mass))) / sd(log(dcc$mass)))
 
 sim_5H3_2 <- sim(m_5H3, data = sim_dat, vars = c("N", "K"))
 
