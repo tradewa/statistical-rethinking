@@ -140,3 +140,63 @@ mean(diff)
 PI(diff)
 ```
 
+**5H3.**
+```{r}
+rm(list = ls())
+library(rethinking)
+data(milk)
+d <- milk
+
+d$K <- standardize(d$kcal.per.g)
+d$N <- standardize(d$neocortex.perc)
+d$M <- standardize(log(d$mass))
+```
+
+```{r}
+dcc <- d[complete.cases(d$K, d$N, d$M), ]
+
+m_5H3 <- quap(
+  alist(
+    # M -> K <- N
+    K ~ dnorm(mu_K, sigma_K),
+    mu_K <- aK + bMK * M + bNK * N,
+    aK ~ dnorm(0, 0.2),
+    bMK ~ dnorm(0, 0.5),
+    bNK ~ dnorm(0, 0.5),
+    sigma_K ~ dexp(1),
+    
+    # M -> N
+    N ~ dnorm(mu_N, sigma_N),
+    mu_N <- aN + bMN * M,
+    aN ~ dnorm(0, 0.2),
+    bMN ~ dnorm(0, 0.5),
+    sigma_N ~ dexp(1)
+  ), data = dcc
+)
+
+plot(precis(m_5H3))
+```
+Counterfactual plots M on K
+```{r}
+M_seq <- seq(from = min(dcc$M) - 0.15, to = max(dcc$M) + 0.15, length.out = 30)
+
+sim_dat <- data.frame(M = M_seq)
+sim_5H3_1 <- sim(m_5H3, data = sim_dat, vars = c("N", "K"))
+
+plot(exp(sim_dat$M), colMeans(sim_5H3_1$K), type = "l", xlim = exp(range(M_seq)), ylim = c(-2, 2), xlab = "manipulated M", ylab = "counterfactual K")
+shade(apply(sim_5H3_1$K, 2, PI), exp(M_seq))
+mtext("Counterfactual M on K")
+```
+
+Counterfactual M on K by doubling M
+```{r}
+sim_dat <- data.frame(M = (log(c(mean_M, mean_M * 2)) - mean(log(dcc$mass))) / sd(log(dcc$mass)))
+
+sim_5H3_2 <- sim(m_5H3, data = sim_dat, vars = c("N", "K"))
+
+diff <- sim_5H3_2$K[, 2] - sim_5H3_2$K[, 1]
+
+mean(diff)
+PI(diff)
+```
+
