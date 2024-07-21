@@ -1,0 +1,142 @@
+---
+title: "Chapter 5 - Exercise"
+format: html
+---
+
+### Easy Problems
+**5E1.** (2) and (4)
+
+**5E2.** \
+\begin{align}
+  D & \sim \text{Normal}(\mu_{i}, \sigma) \\
+  \mu & = \alpha + \beta_{L} L_{i} + \beta_{P} P_{i}
+\end{align}
+
+**5E3.** \
+\begin{align}
+  T & \sim \text{Normal}(\mu_{i}, \sigma) \\
+  \mu & = \alpha + \beta_{F} F_{i} + \beta_{L} L_{i}
+\end{align}
+
+Both slope parameters are positive
+
+### Medium Problems
+**5M4.**
+```{r}
+# data preparation
+rm(list = ls())
+library(rethinking)
+data("WaffleDivorce")
+d <- WaffleDivorce
+d$pct_LDS <- c(0.75, 4.53, 6.18, 1, 2.01, 2.82, 0.43, 0.55, 0.38, 0.75, 0.82, 5.18, 26.35, 0.44, 0.66, 0.87, 1.25, 0.77, 0.64, 0.81, 0.72, 0.39, 0.44, 0.58, 0.72, 1.14, 4.78, 1.29, 0.61, 0.37, 3.34, 0.41, 0.82, 1.48, 0.52, 1.2, 3.85, 0.4, 0.37, 0.83, 1.27, 0.75, 1.21, 67.97, 0.74, 1.13, 3.99, 0.92, 0.44, 11.5)
+
+d$D <- standardize(d$Divorce)
+d$M <- standardize(d$Marriage)
+d$A <- standardize(d$MedianAgeMarriage)
+d$L <- standardize(d$pct_LDS)
+
+# Create linear regression model
+# A -> D <- M
+# L -> D
+m_5M4 <- quap(
+  alist(
+    D ~ dnorm(mu, sigma),
+    mu <- a + bA * A + bM * M + bL * L,
+    a ~ dnorm(0, 0.2),
+    bA ~ dnorm(0, 0.5),
+    bM ~ dnorm(0, 0.5),
+    bL ~ dnorm(0, 0.5),
+    sigma ~ dexp(1)
+  ), data = d
+)
+
+plot(precis(m_5M4))
+```
+
+### Hard Problems
+**5H1.**
+```{r}
+library(dagitty)
+
+mad_dag <- dagitty("dag{M -> A -> D}")
+impliedConditionalIndependencies(mad_dag)
+equivalentDAGs(mad_dag)
+```
+
+**5H2.**
+```{r}
+# Data preparation
+rm(list = ls())
+library(rethinking)
+data("WaffleDivorce")
+d <- WaffleDivorce
+
+d$M <- standardize(d$Marriage)
+d$A <- standardize(d$MedianAgeMarriage)
+d$D <- standardize(d$Divorce)
+```
+
+
+```{r}
+# Create linear regression model
+# DAG: M -> A -> D
+m_5H1 <- quap(
+  alist(
+    # A -> D
+    D ~ dnorm(mu_D, sigma_D),
+    mu_D <- aD + bAD * A,
+    aD ~ dnorm(0, 0.2),
+    bAD ~ dnorm(0, 0.5),
+    sigma_D ~ dexp(1),
+    
+    # M -> A
+    A ~ dnorm(mu_A, sigma_A),
+    mu_A <- aA + bMA * M,
+    aA ~ dnorm(0, 0.2),
+    bMA ~ dnorm(0, 0.5),
+    sigma_A ~ dexp(1)
+  ), data = d
+)
+
+plot(precis(m_5H1))
+```
+
+Counterfactual plot M -> A -> D
+```{r}
+M_seq <- seq(from = -2, to = 2, length.out = 30)
+sim_dat <- data.frame(M = M_seq)
+
+# simulate A and then D, using M_seq
+s <- sim(m_5H1, data = sim_dat, vars = c("A", "D"))
+
+plot(sim_dat$M, colMeans(s$D), ylim = c(-2, 2), type = "l", xlab = "manipulated M", ylab = "counterfactual D")
+shade(apply(s$D, 2, PI), sim_dat$M)
+mtext("Counterfactual M -> A -> D")
+```
+
+Counterfactual plot M -> A
+```{r}
+M_seq <- seq(from = -2, to = 2, length.out = 30)
+sim_dat <- data.frame(M = M_seq)
+
+# simulate A using M_seq
+s <- sim(m_5H1, data = sim_dat, vars = "A")
+
+plot(sim_dat$M, colMeans(s), ylim = c(-2, 2), type = "l", xlab = "manipulated M", ylab = "counterfactual A")
+shade(apply(s, 2, PI), sim_dat$M)
+mtext("Counterfactual M -> A")
+```
+
+Calculate impact of halving marriage rate
+```{r}
+mean_M <- mean(d$Marriage)
+sd_M <- sd(d$Marriage)
+sim_dat <- data.frame(M = (c(mean_M, mean_M / 2)-mean_M)/sd_M)
+
+s2 <- sim(m_5H1, data = sim_dat, vars = c("A", "D"))
+
+diff <- s2$D[, 2] - s2$D[, 1]
+mean(diff)
+PI(diff)
+```
+
