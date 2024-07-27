@@ -3,7 +3,7 @@ title: "Chapter 3 BRMS"
 format: html
 ---
 
-# Sampling the Imaginary
+# 3 Sampling the Imaginary
 
 ```{r}
 # clean workspace
@@ -267,5 +267,257 @@ p2 <-
 
 # combine
 p1 | p2
+```
+Update the simulation for six waters in nine tosses
+```{r}
+# "six waters in nine tosses"
+n_success <- 6
+n_trials <- 9
+
+new_d <-
+  d |> 
+  mutate(likelihood = dbinom(n_success, size = n_trials, prob = p_grid)) |> 
+  mutate(posterior = (likelihood * prior) / sum(posterior))
+
+set.seed(3)
+
+new_samples <-
+  new_d |> 
+  slice_sample(n = n_samples, weight_by = posterior, replace = T)
+```
+
+Here are the intervals by .width and type of .interval
+```{r}
+bind_rows(mean_hdi(new_samples$p_grid, .width = c(.8, .95)),
+          mean_qi(new_samples$p_grid, .width = c(.8, .95))) |> 
+  select(.width, .interval, ymin:ymax) |> 
+  arrange(.width) |> 
+  mutate_if(is.double, round, digits = 2)
+```
+
+posterior plot
+```{r}
+new_d |> 
+  ggplot(aes(x = p_grid)) +
+  geom_line(aes(y = posterior)) +
+  labs(subtitle = "Six waters in nine tosses made\nfor a more symmetrical posterior",
+       x = "proportion of water (p)",
+       y = "density")
+```
+
+### 3.2.3 Point estimates.
+```{r}
+d |> 
+  arrange(desc(posterior))
+
+d |> 
+  arrange(desc(posterior)) |> 
+  slice(1)
+
+samples |> mode_hdi(p_grid)
+
+samples |> mode_qi(p_grid)
+
+Mode(samples$p_grid)
+
+samples |> 
+  summarize(mean = mean(p_grid),
+            median = median(p_grid))
+```
+
+We can inspect the three types of point estimate
+```{r}
+(
+  point_estimates <-
+  bind_rows(samples |> mean_qi(p_grid),
+            samples |> median_qi(p_grid),
+            samples |> mode_qi(p_grid),) |> 
+  select(p_grid, .point) |> 
+  # these last two columns will help us annotate
+  mutate(x = p_grid + c(-.03, .03, -.03),
+         y = c(.0005, .0012, .002))
+)
+```
+
+```{r}
+d |> 
+  ggplot(aes(x = p_grid)) +
+  geom_area(aes(y = posterior),
+            fill = "grey75") +
+  geom_vline(xintercept = point_estimates$p_grid) +
+  geom_text(data = point_estimates,
+            aes(x = x, y = y, label = .point),
+            angle = 90) +
+  labs(x = "proportion of water (p)",
+       y = "density") +
+  theme(panel.grid = element_blank())
+```
+Let p be the proportion of the Earth covered by water and d be our guess. If McElreath pays us $100 if we guess exactly right but subtracts money from the prize proportional to how far off we are, then our loss i sprportional to d - p. If we decide d = .5, we can compute our expected loss
+```{r}
+d |> 
+  summarize('expected loss' = sum(posterior * abs(0.5 - p_grid)))
+```
+
+```{r}
+make_loss <- function(our_d){
+  d |> 
+    mutate(loss = posterior * abs(our_d - p_grid)) |> 
+    summarize(weighted_average_loss = sum(loss))
+}
+
+(
+  l <-
+    d |> 
+    select(p_grid) |> 
+    rename(decision = p_grid) |> 
+    mutate(weighted_average_loss = purrr::map(decision, make_loss)) |> 
+    unnest(weighted_average_loss)
+)
+```
+
+```{r}
+min_loss <-
+  l |> 
+  filter(weighted_average_loss == min(weighted_average_loss)) |> 
+  as.numeric()
+
+l |> 
+  ggplot(aes(x = decision, y = weighted_average_loss)) +
+  geom_area(fill = "grey75") +
+  geom_vline(xintercept = min_loss[1], color = "white", linetype = 3) +
+  geom_hline(yintercept = min_loss[2], color = "white", linetype = 3) +
+  ylab("expected proportional loss") +
+  theme(panel.grid = element_blank())
+```
+
+Let's investigate quadratic loss
+```{r}
+# amend our loss function
+make_loss <- function(our_d){
+  d |> 
+    mutate(loss = posterior * (our_d - p_grid)^2) |> 
+    summarize(weighted_average_loss = sum(loss))
+}
+
+# remake our 'l' data
+l <-
+  d |> 
+  select(p_grid) |> 
+  rename(decision = p_grid) |> 
+  mutate(weighted_average_loss = purrr::map(decision, make_loss)) |> 
+  unnest(weighted_average_loss)
+
+# update to the new minimum loss coordinates
+min_loss <-
+  l |> 
+  filter(weighted_average_loss == min(weighted_average_loss)) |> 
+  as.numeric()
+
+# update the plot
+l |> 
+  ggplot(aes(x = decision, y = weighted_average_loss)) +
+  geom_area(fill = "grey75") +
+  geom_vline(xintercept = min_loss[1], color = "white", linetype = 3) +
+  geom_hline(yintercept = min_loss[2], color = "white", linetype = 3) +
+  ylab("expected proportional loss") +
+  theme(panel.grid = element_blank())
+```
+
+## 3.3 Sampling to simulate prediction
+### 3.3.1 Dummy data
+```{r}
+n_draws <- 1e5
+
+set.seed(3)
+
+d <- tibble(draws = rbinom(n_draws, size = 2, prob = .7))
+
+d |> 
+  count(draws) |> 
+  mutate(proportion = n / nrow(d))
+```
+
+```{r}
+d <- tibble(draws = rbinom(n_draws, size = 9, prob = .7))
+
+# the histogram
+d |> 
+  ggplot(aes(x = draws)) +
+  geom_histogram(binwidth = 1, center = 0,
+                 color = "grey92", linewidth = 1/10) +
+  scale_x_continuous("dummy water count", breaks = 0:4 * 2) +
+  ylab("frequency") +
+  coord_cartesian(xlim = c(0, 9)) +
+  theme(panel.grid = element_blank())
+```
+McElreath suggested we play around with different values of size and prob. With th next block of code, we'll simulate nine conditions
+```{r}
+n_draws <- 1e5
+
+simulate_binom <- function(n, probability){
+  set.seed(3)
+  rbinom(n_draws, size = n, prob = probability)
+}
+
+d <-
+  crossing(n = c(3, 6, 9),
+           probability = c(.3, .6, .9)) |> 
+  mutate(draws = map2(n, probability, simulate_binom)) |> 
+  ungroup() |> 
+  mutate(n = str_c("n = ", n),
+         probability = str_c("p = ", probability)) |> 
+  unnest(draws)
+
+head(d)
+```
+
+Plot the simulation results
+```{r}
+d |> 
+  ggplot(aes(x = draws)) +
+  geom_histogram(binwidth = 1, center = 0,
+                 color = "grey92", linewidth = 1/10) +
+  scale_x_continuous("dummy water count", breaks = 0:4 * 2) +
+  ylab("frequency") +
+  coord_cartesian(xlim = c(0, 9)) +
+  theme(panel.grid = element_blank()) +
+  facet_grid(n ~ probability)
+```
+
+### 3.3.2 Model checking
+#### 3.3.2.2 Is the model adequate?
+```{r}
+# how many grid points would you like?
+n <- 1001
+n_success <- 6
+n_trials <- 9
+
+(
+  d <-
+    tibble(p_grid = seq(from = 0, to = 1, length.out = n),
+           prior = 1) |> 
+    mutate(likelihood = dbinom(n_success, size = n_trials, prob = p_grid)) |> 
+    mutate(posterior = (likelihood * prior) / sum(likelihood * prior))
+)
+```
+
+Make the figure
+```{r}
+d |> 
+  ggplot(aes(x = p_grid, y = posterior)) +
+  geom_area(color = "grey67", fill = "grey67") +
+  geom_segment(data = d |> 
+                 filter(p_grid %in% c(seq(from = .1, to = .9, by = .1), 3 / 10)),
+               aes(xend = p_grid, yend = 0, linewidth = posterior),
+               color = "grey33", show.legend = F) +
+  geom_point(data = d |> 
+               filter(p_grid %in% c(seq(from = .1, to = .9, by = .1), 3 / 10))) +
+  annotate(geom = "text",
+           x = .08, y = .0025,
+           label = "Posterior probability") +
+  scale_linewidth_continuous(range = c(0, 1)) +
+  scale_x_continuous("probability of water", breaks = 0:10 / 10) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  theme(panel.grid = element_blank())
 ```
 
