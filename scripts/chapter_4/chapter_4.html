@@ -329,7 +329,7 @@ male     0.4724265  0.4996986  0.000000   1.00000    ▇▁▁▁▁▁▁▁▁
 <div class="sourceCode cell-code" id="cb34"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="fu">PI</span>(sample.sigma)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>      5%      94% 
-7.323232 8.253636 </code></pre>
+7.323232 8.252525 </code></pre>
 </div>
 </div>
 <p>R code 4.23 - 4.24</p>
@@ -381,8 +381,8 @@ male     0.4724265  0.4996986  0.000000   1.00000    ▇▁▁▁▁▁▁▁▁
 <span id="cb38-15"><a href="#cb38-15" aria-hidden="true" tabindex="-1"></a><span class="fu">precis</span>(m4<span class="fl">.1</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>            mean        sd       5.5%      94.5%
-mu    154.606879 0.4119570 153.948492 155.265266
-sigma   7.730627 0.2913195   7.265042   8.196212</code></pre>
+mu    154.606943 0.4119891 153.948505 155.265381
+sigma   7.731228 0.2913762   7.265553   8.196904</code></pre>
 </div>
 </div>
 <p>R code 4.31</p>
@@ -398,7 +398,7 @@ sigma   7.730627 0.2913195   7.265042   8.196212</code></pre>
 <div class="cell-output cell-output-stdout">
 <pre><code>           mean        sd      5.5%     94.5%
 mu    177.86375 0.1002354 177.70356 178.02395
-sigma  24.51756 0.9289235  23.03296  26.00216</code></pre>
+sigma  24.51756 0.9289232  23.03297  26.00216</code></pre>
 </div>
 </div>
 <p>R code 4.32</p>
@@ -407,14 +407,14 @@ sigma  24.51756 0.9289235  23.03296  26.00216</code></pre>
 <span id="cb42-2"><a href="#cb42-2" aria-hidden="true" tabindex="-1"></a><span class="fu">diag</span>(<span class="fu">vcov</span>(m4<span class="fl">.1</span>))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>        mu      sigma 
-0.16970860 0.08486705 </code></pre>
+0.16973503 0.08490007 </code></pre>
 </div>
 <div class="sourceCode cell-code" id="cb44"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a><span class="co"># get correlation of parameters from covariance matrix</span></span>
 <span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a><span class="fu">cov2cor</span>(<span class="fu">vcov</span>(m4<span class="fl">.1</span>))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>               mu       sigma
-mu    1.000000000 0.001789691
-sigma 0.001789691 1.000000000</code></pre>
+mu    1.000000000 0.001801431
+sigma 0.001801431 1.000000000</code></pre>
 </div>
 </div>
 <p>R code 4.34</p>
@@ -425,9 +425,9 @@ sigma 0.001789691 1.000000000</code></pre>
 <span id="cb46-4"><a href="#cb46-4" aria-hidden="true" tabindex="-1"></a>post <span class="ot">&lt;-</span> <span class="fu">extract.samples</span>(m4<span class="fl">.1</span>, <span class="at">n =</span> <span class="fl">1e4</span>)</span>
 <span id="cb46-5"><a href="#cb46-5" aria-hidden="true" tabindex="-1"></a><span class="fu">precis</span>(post)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>            mean        sd      5.5%      94.5%     histogram
-mu    154.604174 0.4113540 153.94538 155.247095      ▁▁▁▅▇▂▁▁
-sigma   7.728022 0.2912373   7.26504   8.191726 ▁▁▁▁▂▅▇▇▃▁▁▁▁</code></pre>
+<pre><code>            mean        sd       5.5%      94.5%     histogram
+mu    154.606684 0.4068892 153.959846 155.252722      ▁▁▁▅▇▂▁▁
+sigma   7.728839 0.2890730   7.264301   8.183428 ▁▁▁▁▂▅▇▇▃▁▁▁▁</code></pre>
 </div>
 </div>
 <section id="linear-prediction" class="level3">
