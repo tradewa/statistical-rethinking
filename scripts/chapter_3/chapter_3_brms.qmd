@@ -521,3 +521,191 @@ d |>
   theme(panel.grid = element_blank())
 ```
 
+```{r}
+n_draws <- 1e5
+
+simulate_binom <- function(probability){
+  set.seed(3)
+  rbinom(n_draws, size = 9, prob = probability)
+}
+
+d_small <-
+  tibble(probability = seq(from = .1, to = .9, by = .1)) |> 
+  mutate(draws = purrr::map(probability, simulate_binom)) |> 
+  unnest(draws) |> 
+  mutate(label = str_c("p = ", probability))
+
+head(d_small)
+```
+
+```{r}
+d_small |> 
+  ggplot(aes(x = draws)) +
+  geom_histogram(binwidth = 1, center = 0,
+                 color = "grey92", linewidth = 1/10) +
+  scale_x_continuous(NULL, breaks = 0:3 * 3) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  labs(subtitle = "Sampling distributions") +
+  coord_cartesian(xlim = c(0, 9)) +
+  theme(panel.grid = element_blank()) +
+  facet_wrap(~ label, ncol = 9)
+```
+
+```{r}
+n_samples <- 1e4
+
+set.seed(3)
+
+samples <-
+  d |> 
+  slice_sample(n = n_samples, weight_by = posterior, replace = T) |> 
+  mutate(w = purrr::map_dbl(p_grid, rbinom, n = 1, size = 9))
+
+glimpse(samples)
+```
+
+```{r}
+samples |> 
+  ggplot(aes(x = w)) +
+  geom_histogram(binwidth = 1, center = 0,
+                 color = "grey92", linewidth = 1/10) +
+  scale_x_continuous("number of water samples", breaks = 0:3 * 3) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  ggtitle("Posterior predictive distribution") +
+  coord_cartesian(xlim = c(0, 9),
+                  ylim = c(0, 3000)) +
+  theme(panel.grid = element_blank())
+```
+
+Try again with unaggregated samples
+```{r}
+set.seed(3)
+
+samples <-
+  samples |> 
+  mutate(iter = 1:n(),
+         draws = purrr::map(p_grid, rbinom, n = 9, size = 1)) |> 
+  unnest(draws)
+
+glimpse(samples)
+
+tosses <- c("w", "l", "w", "w", "w", "l", "w", "l", "w")
+
+rle(tosses)
+
+rle(tosses)$lengths |> max()
+```
+
+```{r}
+samples |> 
+  group_by(iter) |> 
+  summarize(longest_run_length = rle(draws)$lengths |> max()) |> 
+  
+  ggplot(aes(x = longest_run_length)) +
+  geom_histogram(aes(fill = longest_run_length == 3),
+                 binwidth = 1, center = 0,
+                 color = "grey92", linewidth = 1/10) +
+  scale_fill_viridis_d(option = "D", end = .9) +
+  scale_x_continuous("longest run length", breaks = 0:3 * 3) +
+  ylab("frequency") +
+  coord_cartesian(xlim = c(0, 9)) +
+  theme(legend.position = "none",
+        panel.grid = element_blank())
+```
+
+```{r}
+rle(tosses)
+
+rle(tosses)$lengths |> length()
+```
+
+```{r}
+samples |> 
+  group_by(iter) |> 
+  summarize(longest_run_length = rle(draws)$lengths |> length()) |> 
+  
+  ggplot(aes(x = longest_run_length)) +
+  geom_histogram(aes(fill = longest_run_length == 7),
+                 binwidth = 1, center = 0,
+                 color = "grey92", linewidth = 1/10) +
+  scale_fill_viridis_d(option = "D", end = .9) +
+  scale_x_continuous("longest run length", breaks = 0:3 * 3) +
+  ylab("frequency") +
+  coord_cartesian(xlim = c(0, 9)) +
+  theme(legend.position = "none",
+        panel.grid = element_blank())
+  
+```
+
+## 3.4 Let's practice with brms
+```{r}
+library(brms)
+```
+
+```{r}
+b3.1 <-
+  brm(data = list(w = 6),
+      family = binomial(link = "identity"),
+      w | trials(9) ~ 0 + Intercept,
+      # this is a flat prior
+      prior(beta(1, 1), class = b, lb = 0, ub = 1),
+      iter = 5000, warmup = 1000,
+      seed = 3,
+      file = "fits/b03.01")
+```
+
+Posterior summary for b_Intercept
+```{r}
+posterior_summary(b3.1)["b_Intercept", ] |> 
+  round(digits = 2)
+```
+
+Much like the way we used the samples() function to simulate probability values, above, we can do so with the brms::fitted() function. But we will have to specify scale = "linear" in order to return results in the probability metric. By default, brms::fitted() will return summary information. Since we want actual simulation draws, we’ll specify summary = F.
+```{r}
+f <-
+  fitted(b3.1,
+         summary = F,
+         scale = "linear") |> 
+  data.frame() |> 
+  set_names("p")
+
+glimpse(f)
+```
+
+By default, we have a generically-named vector of 4,000 samples. We’ll explain the defaults in later chapters. For now, notice we can view these in a density.
+```{r}
+f |> 
+  ggplot(aes(x = p)) +
+  geom_density(fill = "grey50", color = "grey50") +
+  annotate(geom = "text", x = .08, y = 2.5,
+           label = "Posterior probability") +
+  scale_x_continuous("probability of water",
+                     breaks = c(0, .5, 1),
+                     limits = 0:1) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  theme(panel.grid = element_blank())
+```
+
+Use above distribution probability to predict histrograms of w counts
+```{r}
+set.seed(3)
+
+f <-
+  f |>
+  mutate(w = rbinom(n(), size = n_trials, prob = p))
+
+f |> 
+  ggplot(aes(x = w)) +
+  geom_histogram(binwidth = 1, center = 0,
+                 color = "grey92", linewidth = 1/10) +
+  scale_x_continuous("number of water samples", breaks = 0:3 * 3) +
+  scale_y_continuous(NULL, breaks = NULL, limits = c(0, 5000)) +
+  ggtitle("Posterior predictive distribution") +
+  coord_cartesian(xlim = c(0, 9)) +
+  theme(panel.grid = element_blank())
+```
+
+```{r}
+sessionInfo()
+```
+
