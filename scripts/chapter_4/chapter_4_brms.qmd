@@ -84,5 +84,439 @@ p3 <-
 set.seed(4)
 
 prod(1 + runif(12, 0, .1))
+
+set.seed(4)
+
+tibble(a = 1,
+       b = runif(12, 0, .1)) |> 
+  mutate(c = a + b) |> 
+  summarize(p = prod(c))
+
+set.seed
+
+growth <-
+  tibble(growth = map_dbl(1:10000, ~prod(1 + runif(12, min = 0, max = .1))))
+
+ggplot(data = growth, aes(x = growth)) + geom_density()
 ```
 
+The smaller the effect of each locus, the better this additive approximation will be
+```{r}
+set.seed(4)
+
+samples <-
+  tibble(big = map_dbl(1:10000, ~prod(1 + runif(12, min = 0, max = .5))),
+         small = map_dbl(1:10000, ~prod(1 + runif(12, min = 0, max = .01))))
+
+# wrangle
+samples |> 
+  pivot_longer(everything(), values_to = "samples") |> 
+  
+  # plot
+  ggplot(aes(x = samples)) +
+  geom_density(fill = "black") +
+  facet_wrap(~ name, scales = "free")
+```
+
+### 4.1.3 Normal by log-multiplication
+Instead of saving our tibble, we'll just feed it directly into our plot
+```{r}
+samples |> 
+  mutate(log_big = log(big)) |> 
+  
+  ggplot(aes(x = log_big)) +
+  geom_density(fill = "grey33") +
+  xlab("the log of the big")
+```
+
+### 4.1.4 Using Gaussian distributions
+#### 4.1.4.4 Overthinking: Gaussian distribution
+```{r}
+tibble(y = seq(from = -1, to = 1, by = .01),
+       mu = 0,
+       sigma = .1) |> 
+  # compute p(y) with a hand-made Gaussian probability density function
+  mutate(p = (1 / sqrt(2 * pi * sigma)) * exp(-((y - mu)^2 / (2 * sigma^2)))) |> 
+  
+  ggplot(aes(x = y, y = p)) +
+  geom_line() +
+  ylab(expression(italic(p)(italic("y|") * mu == 0*","~sigma == 0.1)))
+```
+
+## 4.2 A language for describing models
+### 4.2.1 Re-describing the globe tossing model
+#### 4.2.1.1 Overthinking: From model definition to Bayes' theorem
+```{r}
+# how many 'p_grid' points would you like?
+n_points <- 100
+
+d <-
+  tibble(p_grid = seq(from = 0, to = 1, length.out = n_points),
+         w = 6,
+         n = 9) |> 
+  mutate(prior = dunif(p_grid, min = 0, max = 1),
+         likelihood = dbinom(w, size = n, prob = p_grid)) |> 
+  mutate(posterior = likelihood * prior / sum(likelihood * prior))
+
+head(d)
+```
+
+Plot of prior, likelihood, and posterior
+```{r}
+d |> 
+  pivot_longer(prior:posterior) |> 
+  # this line allows us to dictate the order in which the panels will appear
+  mutate(name = factor(name, levels = c("prior", "likelihood", "posterior"))) |> 
+  
+  ggplot(aes(x = p_grid, y = value, fill = name)) +
+  geom_area() +
+  scale_fill_manual(values = c("blue", "red", "purple")) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  theme(legend.position = "none") +
+  facet_wrap(~ name, scales = "free")
+```
+
+## 4.3 A Gaussian model of height
+### 4.3.1 The data
+```{r}
+library(rethinking)
+data(Howell1)
+d <- Howell1
+
+rm(Howell1)
+detach(package:rethinking, unload = T)
+library(brms)
+```
+
+```{r}
+d |> 
+  pivot_longer(everything()) |> 
+  mutate(name = factor(name, levels = c("height", "weight", "age", "male"))) |> 
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 10) +
+  facet_wrap(~ name, scales = "free", ncol = 1)
+```
+Adult only data frame
+```{r}
+d2 <-
+  d |> 
+  filter(age >= 18)
+
+d2 |> count()
+```
+
+### 4.3.2 The model
+```{r}
+p1 <-
+  tibble(x = seq(from = 100, to = 250, by = .1)) |> 
+  
+  ggplot(aes(x = x, y = dnorm(x, mean = 178, sd = 20))) +
+  geom_line() +
+  scale_x_continuous(breaks = seq(from = 100, to = 250, by = 75)) +
+  labs(title = "mu ~ dnorm(178, 20)",
+       y = "density")
+
+p1
+```
+
+```{r}
+p2 <-
+  tibble(x = seq(from = -10, to = 60, by = .1)) |> 
+  
+  ggplot(aes(x = x, y = dunif(x, min = 0, max = 50))) +
+  geom_line() +
+  scale_x_continuous(breaks = c(0, 50)) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  ggtitle("sigma ~ dunif(0, 50)")
+
+p2
+```
+Simulate from both priors at once to get a prior probability distribution of heights
+```{r}
+n <- 1e4
+
+set.seed(4)
+
+sim <-
+  tibble(sample_mu = rnorm(n, mean = 178, sd = 20),
+         sample_sigma = runif(n, min = 0, max = 50)) |> 
+  mutate(height = rnorm(n, mean = sample_mu, sd = sample_sigma))
+
+p3 <- sim |> 
+  ggplot(aes(x = height)) +
+  geom_density(fill = "grey33") +
+  scale_x_continuous(breaks = c(0, 73, 178, 283)) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  ggtitle("height ~ dnorm(mu, sigma)") +
+  theme(panel.grid = element_blank())
+
+p3
+```
+
+The x-axis breaks on the plot is intentional. To compute the mean and 3 standard deviations above and below you might do this
+```{r}
+sim |> 
+  summarise(ll = mean(height) - sd(height) * 3,
+            mean = mean(height),
+            ul = mean(height) + sd(height) * 3) |> 
+  mutate_all(round, digits = 1)
+```
+
+```{r}
+set.seed(4)
+
+sim <-
+  tibble(sample_mu = rnorm(n, mean = 178, sd = 100),
+         sample_sigma = runif(n, min = 0, max = 50)) |> 
+  mutate(height = rnorm(n, mean = sample_mu, sd = sample_sigma))
+
+breaks <-
+  c(mean(sim$height) - 3 * sd(sim$height), 0, mean(sim$height), mean(sim$height) + 3 * sd(sim$height)) |> 
+  round(digits = 0)
+
+# this is just for aesthetics
+text <-
+  tibble(height = 272 - 25,
+         y = .0013,
+         label = "tallest man",
+         angle = 90)
+
+# plot
+p4 <-
+  sim |> 
+  ggplot(aes(x = height)) +
+  geom_density(fill = "black", linewidth = 0) +
+  geom_vline(xintercept = 0, color = "grey92") +
+  geom_vline(xintercept = 272, color = "grey92", linetype = 3) +
+  geom_text(data = text,
+            aes(y = y, label = label, angle = angle),
+            color = "grey92") +
+  scale_x_continuous(breaks = breaks) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  ggtitle("height ~ dnorm(mu, sigma)\nmu ~ dnorm(178, 100)") +
+  theme(panel.grid = element_blank())
+
+p4
+```
+
+Combine all four charts
+```{r}
+(p1 + xlab("mu") | p2 + xlab("sigma")) / (p3 | p4)
+```
+
+On page 84, McElreath said his prior simulation indicated 4% of the heights would be below zero. Here’s how we might determe that percentage for our simulation.
+```{r}
+sim |> 
+  count(height < 0) |> 
+  mutate(percent = 100 * n / sum(n))
+
+sim |> 
+  count(height < 272) |> 
+  mutate(percent = 100 * n / sum(n))
+```
+
+### 4.3.3 Grid approximation of the posterior distribution
+```{r}
+n <- 200
+
+d_grid <-
+  # we'll accomplish with 'tidyr::crossing()' what McElreath did with base R 'expand_grid()'
+  crossing(mu = seq(from = 140, to = 160, length.out = n),
+           sigma = seq(from = 4, to = 9, length.out = n))
+
+glimpse(d_grid)
+```
+
+```{r}
+grid_function <- function(mu, sigma){
+  dnorm(d2$height, mean = mu, sd = sigma, log = T) |> 
+    sum()
+}
+```
+
+Now we're ready to complete the tibble
+```{r}
+d_grid <-
+  d_grid |> 
+  mutate(log_likelihood = map2(mu, sigma, grid_function)) |> 
+  unnest(log_likelihood) |> 
+  mutate(prior_mu = dnorm(mu, mean = 178, sd = 20, log = T),
+         prior_sigma = dunif(sigma, min = 0, max = 50, log = T)) |> 
+  mutate(product = log_likelihood + prior_mu + prior_sigma) |> 
+  mutate(probability = exp(product - max(product)))
+
+head(d_grid)
+```
+
+In the final d_grid, the probability vector contains the posterior probabilities across values of mu and sigma. We can make a contour plot with geom_countour()
+```{r}
+d_grid |> 
+  ggplot(aes(x = mu, y = sigma, z = probability)) +
+  geom_contour() +
+  labs(x = expression(mu),
+       y = expression(sigma)) +
+  coord_cartesian(xlim = range(d_grid$mu),
+                  ylim = range(d_grid$sigma)) +
+  theme(panel.grid = element_blank())
+```
+We'll make our heat map with geom_raster()
+```{r}
+d_grid |> 
+  ggplot(aes(x = mu, y = sigma, fill = probability)) +
+  geom_raster(interpolate = T) +
+  scale_fill_viridis_c(option = "B") +
+  labs(x = expression(mu),
+       y = expression(sigma)) +
+  theme(panel.grid = element_blank())
+```
+
+### 4.3.4 Sampling from the posterior
+```{r}
+set.seed(4)
+
+d_grid_samples <-
+  d_grid |> 
+  sample_n(size = 1e4, replace = T, weight = probability)
+
+d_grid_samples |> 
+  ggplot(aes(x = mu, y = sigma)) +
+  geom_point(size = .9, alpha = 1/15) +
+  scale_fill_viridis_c() +
+  labs(x = expression(mu[samples]),
+       y = expression(sigma[samples])) +
+  theme(panel.grid = element_blank())
+```
+We can use pivot_longer() and facet_wrap() to plot the densities for both mu and sigma at once
+```{r}
+d_grid_samples |> 
+  pivot_longer(mu:sigma) |> 
+  
+  ggplot(aes(x = value)) +
+  geom_density(fill = "grey33") +
+  scale_y_continuous(NULL, breaks = NULL) +
+  xlab(NULL) +
+  theme(panel.grid = element_blank()) +
+  facet_wrap(~name, scales = "free", labeller = label_parsed)
+```
+
+We'll use the tidybayes package to compute their posterior modes and 95% HDIs
+```{r}
+library(tidybayes)
+
+d_grid_samples |> 
+  pivot_longer(mu:sigma) |> 
+  group_by(name) |> 
+  mode_hdi(value)
+```
+
+#### 4.3.4.1 Overthinking: Sample size and the normality of $\sigma$'s posterior
+```{r}
+set.seed(4)
+(d3 <- sample(d2$height, size = 20))
+```
+
+```{r}
+n <- 200
+
+d_grid <-
+  crossing(mu = seq(from = 150, to = 170, length.out = n),
+           sigma = seq(from = 4, to = 20, length.out = n))
+
+grid_function <- function(mu, sigma){
+  dnorm(d3, mean = mu, sd = sigma, log = T) |> 
+    sum()
+}
+
+d_grid <-
+  d_grid |> 
+  mutate(log_likelihood = map2_dbl(mu, sigma, grid_function)) |> 
+  mutate(prior_mu = dnorm(mu, mean = 178, sd = 20, log = T),
+         prior_sigma = dunif(sigma, min = 0, max = 50, log = T)) |> 
+  mutate(product = log_likelihood + prior_mu + prior_sigma) |> 
+  mutate(probability = exp(product - max(product)))
+```
+
+next we sample_n() and plot
+```{r}
+set.seed(4)
+
+d_grid_samples <-
+  d_grid |> 
+  sample_n(size = 1e4, replace = T, weight = probability)
+
+d_grid_samples |> 
+  ggplot(aes(x = mu, y = sigma)) +
+  geom_point(size = .9, alpha = 1/15) +
+  labs(x = expression(mu[samples]),
+       y = expression(sigma[samples])) +
+  theme(panel.grid = element_blank())
+```
+
+Behold the updated densities
+```{r}
+d_grid_samples |> 
+  pivot_longer(mu:sigma) |> 
+  
+  ggplot(aes(x = value)) +
+  geom_density(fill = "grey33", linewidth = 0) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  xlab(NULL) +
+  theme(panel.grid = element_blank()) +
+  facet_wrap(~ name, scales = "free", labeller = label_parsed)
+```
+
+### 4.3.5 Finding the posterior distribution with brm()
+```{r}
+b4.1 <-
+  brm(data = d2,
+      family = gaussian,
+      height ~ 1,
+      prior = c(prior(normal(178, 20), class = Intercept),
+                prior(uniform(0, 50), class = sigma, ub = 50)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 4,
+      file = "fits/b04.01")
+```
+
+```{r}
+plot(b4.1)
+```
+
+```{r}
+print(b4.1)
+```
+
+```{r}
+b4.1$fit
+```
+
+```{r}
+summary(b4.1, prob = .89)
+```
+
+```{r}
+b4.2 <-
+  brm(data = d2,
+      family = gaussian,
+      height ~ 1,
+      prior = c(prior(normal(178, 0.1), class = Intercept),
+                prior(uniform(0, 50), class = sigma, ub = 50)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 4,
+      file = "fits/b04.02")
+```
+
+```{r}
+plot(b4.2, widths = c(1, 2))
+```
+
+```{r}
+summary(b4.2)
+```
+
+```{r}
+rbind(summary(b4.1)$fixed,
+      summary(b4.2)$fixed)
+```
+
+### 4.3.6 Sampling from a brm() fit
