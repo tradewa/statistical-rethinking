@@ -305,7 +305,7 @@ $ position  &lt;dbl&gt; 0.0000000, -0.9821084, -1.3946292, -1.8398793, -1.212730
     }
     .Internal(set.seed(seed, i.knd, normal.kind, sample.kind))
 }
-&lt;bytecode: 0x115d636f0&gt;
+&lt;bytecode: 0x1542d94a0&gt;
 &lt;environment: namespace:base&gt;</code></pre>
 </div>
 <div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>growth <span class="ot">&lt;-</span></span>
@@ -1883,6 +1883,553 @@ scale reduction factor on split chains (at convergence, Rhat = 1).</code></pre>
 </div>
 </div>
 </section>
+<section id="plotting-regression-intervals-and-countours" class="level4">
+<h4 class="anchored" data-anchor-id="plotting-regression-intervals-and-countours">4.4.3.4 Plotting regression intervals and countours</h4>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb174"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb174-1"><a href="#cb174-1" aria-hidden="true" tabindex="-1"></a><span class="fu">mean</span>(d2<span class="sc">$</span>weight)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 44.99049</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb176"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb176-1"><a href="#cb176-1" aria-hidden="true" tabindex="-1"></a>mu_at_50 <span class="ot">&lt;-</span></span>
+<span id="cb176-2"><a href="#cb176-2" aria-hidden="true" tabindex="-1"></a>  post <span class="sc">|&gt;</span> </span>
+<span id="cb176-3"><a href="#cb176-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">transmute</span>(<span class="at">mu_at_50 =</span> b_Intercept <span class="sc">+</span> b_weight_c <span class="sc">*</span> <span class="fl">5.01</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: Dropping 'draws_df' class as required metadata was removed.</code></pre>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb178"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb178-1"><a href="#cb178-1" aria-hidden="true" tabindex="-1"></a>mu_at_50 <span class="sc">|&gt;</span> </span>
+<span id="cb178-2"><a href="#cb178-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> mu_at_50)) <span class="sc">+</span></span>
+<span id="cb178-3"><a href="#cb178-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_density</span>(<span class="at">linewidth =</span> <span class="dv">0</span>, <span class="at">fill =</span> <span class="st">"royalblue"</span>) <span class="sc">+</span></span>
+<span id="cb178-4"><a href="#cb178-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_y_continuous</span>(<span class="cn">NULL</span>, <span class="at">breaks =</span> <span class="cn">NULL</span>) <span class="sc">+</span></span>
+<span id="cb178-5"><a href="#cb178-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">xlab</span>(<span class="fu">expression</span>(mu[<span class="st">"height | weight = 50"</span>])) <span class="sc">+</span></span>
+<span id="cb178-6"><a href="#cb178-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="chapter_4_brms_files/figure-html/unnamed-chunk-81-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb179"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb179-1"><a href="#cb179-1" aria-hidden="true" tabindex="-1"></a><span class="fu">mean_hdi</span>(mu_at_50[, <span class="dv">1</span>], <span class="at">.width =</span> <span class="fu">c</span>(.<span class="dv">89</span>, .<span class="dv">95</span>))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 2 × 6
+  mu_at_50 .lower .upper .width .point .interval
+     &lt;dbl&gt;  &lt;dbl&gt;  &lt;dbl&gt;  &lt;dbl&gt; &lt;chr&gt;  &lt;chr&gt;    
+1     159.   159.   160.   0.89 mean   hdi      
+2     159.   158.   160.   0.95 mean   hdi      </code></pre>
+</div>
+</div>
+<p>to express 95% HPDI on density plot, use tidybayes::stat_halfeye()</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb181"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb181-1"><a href="#cb181-1" aria-hidden="true" tabindex="-1"></a>mu_at_50 <span class="sc">|&gt;</span> </span>
+<span id="cb181-2"><a href="#cb181-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> mu_at_50, <span class="at">y =</span> <span class="dv">0</span>)) <span class="sc">+</span></span>
+<span id="cb181-3"><a href="#cb181-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">stat_halfeye</span>(<span class="at">point_interval =</span> mode_hdi, <span class="at">.width =</span> .<span class="dv">95</span>,</span>
+<span id="cb181-4"><a href="#cb181-4" aria-hidden="true" tabindex="-1"></a>               <span class="at">fill =</span> <span class="st">"royalblue"</span>) <span class="sc">+</span></span>
+<span id="cb181-5"><a href="#cb181-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_y_continuous</span>(<span class="cn">NULL</span>, <span class="at">breaks =</span> <span class="cn">NULL</span>) <span class="sc">+</span></span>
+<span id="cb181-6"><a href="#cb181-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">xlab</span>(<span class="fu">expression</span>(mu[<span class="st">"height | weight = 50"</span>])) <span class="sc">+</span></span>
+<span id="cb181-7"><a href="#cb181-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="chapter_4_brms_files/figure-html/unnamed-chunk-83-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>With brms, you would use fitted() to do what McElreath accomplished with link()</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb182"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb182-1"><a href="#cb182-1" aria-hidden="true" tabindex="-1"></a>mu <span class="ot">&lt;-</span> <span class="fu">fitted</span>(b4<span class="fl">.3</span>, <span class="at">summary =</span> F)</span>
+<span id="cb182-2"><a href="#cb182-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb182-3"><a href="#cb182-3" aria-hidden="true" tabindex="-1"></a><span class="fu">str</span>(mu)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code> num [1:4000, 1:352] 157 157 156 157 157 ...</code></pre>
+</div>
+</div>
+<p>Much like rethinking’s link(), brms::fitted() can accommodate custom predictor values with its newdata argument.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb184"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb184-1"><a href="#cb184-1" aria-hidden="true" tabindex="-1"></a>weight_seq <span class="ot">&lt;-</span></span>
+<span id="cb184-2"><a href="#cb184-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tibble</span>(<span class="at">weight =</span> <span class="dv">25</span><span class="sc">:</span><span class="dv">70</span>) <span class="sc">|&gt;</span> </span>
+<span id="cb184-3"><a href="#cb184-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">weight_c =</span> weight <span class="sc">-</span> <span class="fu">mean</span>(d2<span class="sc">$</span>weight))</span>
+<span id="cb184-4"><a href="#cb184-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb184-5"><a href="#cb184-5" aria-hidden="true" tabindex="-1"></a>mu <span class="ot">&lt;-</span></span>
+<span id="cb184-6"><a href="#cb184-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">fitted</span>(b4<span class="fl">.3</span>,</span>
+<span id="cb184-7"><a href="#cb184-7" aria-hidden="true" tabindex="-1"></a>         <span class="at">summary =</span> F,</span>
+<span id="cb184-8"><a href="#cb184-8" aria-hidden="true" tabindex="-1"></a>         <span class="at">newdata =</span> weight_seq) <span class="sc">|&gt;</span> </span>
+<span id="cb184-9"><a href="#cb184-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">data.frame</span>() <span class="sc">|&gt;</span> </span>
+<span id="cb184-10"><a href="#cb184-10" aria-hidden="true" tabindex="-1"></a>  <span class="co"># here we name the columns after the 'weight' values from which they were computed</span></span>
+<span id="cb184-11"><a href="#cb184-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">set_names</span>(<span class="dv">25</span><span class="sc">:</span><span class="dv">70</span>) <span class="sc">|&gt;</span> </span>
+<span id="cb184-12"><a href="#cb184-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">iter =</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">n</span>())</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb185"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb185-1"><a href="#cb185-1" aria-hidden="true" tabindex="-1"></a>mu <span class="ot">&lt;-</span> </span>
+<span id="cb185-2"><a href="#cb185-2" aria-hidden="true" tabindex="-1"></a>  mu <span class="sc">%&gt;%</span></span>
+<span id="cb185-3"><a href="#cb185-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pivot_longer</span>(<span class="sc">-</span>iter,</span>
+<span id="cb185-4"><a href="#cb185-4" aria-hidden="true" tabindex="-1"></a>               <span class="at">names_to =</span> <span class="st">"weight"</span>,</span>
+<span id="cb185-5"><a href="#cb185-5" aria-hidden="true" tabindex="-1"></a>               <span class="at">values_to =</span> <span class="st">"height"</span>) <span class="sc">%&gt;%</span> </span>
+<span id="cb185-6"><a href="#cb185-6" aria-hidden="true" tabindex="-1"></a>  <span class="co"># we might reformat `weight` to numerals</span></span>
+<span id="cb185-7"><a href="#cb185-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">weight =</span> <span class="fu">as.numeric</span>(weight))</span>
+<span id="cb185-8"><a href="#cb185-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb185-9"><a href="#cb185-9" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(mu)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 6 × 3
+   iter weight height
+  &lt;int&gt;  &lt;dbl&gt;  &lt;dbl&gt;
+1     1     25   137.
+2     1     26   138.
+3     1     27   139.
+4     1     28   140.
+5     1     29   141.
+6     1     30   142.</code></pre>
+</div>
+</div>
+<p>after data processing is done we will reproduce McElreath’s Figure 4.9a</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb187"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb187-1"><a href="#cb187-1" aria-hidden="true" tabindex="-1"></a>d2 <span class="sc">|&gt;</span> </span>
+<span id="cb187-2"><a href="#cb187-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> weight, <span class="at">y =</span> height)) <span class="sc">+</span></span>
+<span id="cb187-3"><a href="#cb187-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">data =</span> mu <span class="sc">|&gt;</span> <span class="fu">filter</span>(iter <span class="sc">&lt;</span> <span class="dv">101</span>),</span>
+<span id="cb187-4"><a href="#cb187-4" aria-hidden="true" tabindex="-1"></a>             <span class="at">color =</span> <span class="st">"navyblue"</span>, <span class="at">alpha =</span> .<span class="dv">05</span>) <span class="sc">+</span></span>
+<span id="cb187-5"><a href="#cb187-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_cartesian</span>(<span class="at">xlim =</span> <span class="fu">c</span>(<span class="dv">30</span>, <span class="dv">65</span>)) <span class="sc">+</span></span>
+<span id="cb187-6"><a href="#cb187-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">panel.grid =</span> <span class="fu">element_blank</span>())</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="chapter_4_brms_files/figure-html/unnamed-chunk-87-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>With fitted(), it’s quite easy to plot a regression line and its intervals. Just omit the summary = T argument.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb188"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb188-1"><a href="#cb188-1" aria-hidden="true" tabindex="-1"></a>mu_summary <span class="ot">&lt;-</span></span>
+<span id="cb188-2"><a href="#cb188-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">fitted</span>(b4<span class="fl">.3</span>,</span>
+<span id="cb188-3"><a href="#cb188-3" aria-hidden="true" tabindex="-1"></a>         <span class="at">newdata =</span> weight_seq) <span class="sc">|&gt;</span> </span>
+<span id="cb188-4"><a href="#cb188-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">data.frame</span>() <span class="sc">|&gt;</span> </span>
+<span id="cb188-5"><a href="#cb188-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">bind_cols</span>(weight_seq)</span>
+<span id="cb188-6"><a href="#cb188-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb188-7"><a href="#cb188-7" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(mu_summary)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>  Estimate Est.Error     Q2.5    Q97.5 weight  weight_c
+1 136.5390 0.8540439 134.8579 138.1883     25 -19.99049
+2 137.4429 0.8150903 135.8406 139.0130     26 -18.99049
+3 138.3469 0.7763548 136.8252 139.8367     27 -17.99049
+4 139.2508 0.7378718 137.7990 140.6534     28 -16.99049
+5 140.1547 0.6996830 138.7755 141.4870     29 -15.99049
+6 141.0586 0.6618393 139.7522 142.3184     30 -14.99049</code></pre>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb190"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb190-1"><a href="#cb190-1" aria-hidden="true" tabindex="-1"></a>d2 <span class="sc">|&gt;</span> </span>
+<span id="cb190-2"><a href="#cb190-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> weight, <span class="at">y =</span> height)) <span class="sc">+</span></span>
+<span id="cb190-3"><a href="#cb190-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_smooth</span>(<span class="at">data =</span> mu_summary,</span>
+<span id="cb190-4"><a href="#cb190-4" aria-hidden="true" tabindex="-1"></a>              <span class="fu">aes</span>(<span class="at">y =</span> Estimate, <span class="at">ymin =</span> Q2<span class="fl">.5</span>, <span class="at">ymax =</span> Q97<span class="fl">.5</span>),</span>
+<span id="cb190-5"><a href="#cb190-5" aria-hidden="true" tabindex="-1"></a>              <span class="at">stat =</span> <span class="st">"identity"</span>,</span>
+<span id="cb190-6"><a href="#cb190-6" aria-hidden="true" tabindex="-1"></a>              <span class="at">fill =</span> <span class="st">"grey70"</span>, <span class="at">color =</span> <span class="st">"black"</span>, <span class="at">alpha =</span> <span class="dv">1</span>, <span class="at">linewidth =</span> <span class="dv">1</span><span class="sc">/</span><span class="dv">2</span>) <span class="sc">+</span></span>
+<span id="cb190-7"><a href="#cb190-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">color =</span> <span class="st">"navyblue"</span>, <span class="at">shape =</span> <span class="dv">1</span>, <span class="at">linewidth =</span> <span class="fl">1.5</span>, <span class="at">alpha =</span> <span class="dv">2</span><span class="sc">/</span><span class="dv">3</span>) <span class="sc">+</span></span>
+<span id="cb190-8"><a href="#cb190-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_cartesian</span>(<span class="at">xlim =</span> <span class="fu">range</span>(d2<span class="sc">$</span>weight)) <span class="sc">+</span></span>
+<span id="cb190-9"><a href="#cb190-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">text =</span> <span class="fu">element_text</span>(<span class="at">family =</span> <span class="st">"Times"</span>),</span>
+<span id="cb190-10"><a href="#cb190-10" aria-hidden="true" tabindex="-1"></a>        <span class="at">panel.grid =</span> <span class="fu">element_blank</span>())</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning in geom_point(color = "navyblue", shape = 1, linewidth = 1.5, alpha =
+2/3): Ignoring unknown parameters: `linewidth`</code></pre>
+</div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="chapter_4_brms_files/figure-html/unnamed-chunk-89-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="prediction-intervals" class="level4">
+<h4 class="anchored" data-anchor-id="prediction-intervals">4.4.3.5 Prediction intervals</h4>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb192"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb192-1"><a href="#cb192-1" aria-hidden="true" tabindex="-1"></a>weight_seq <span class="ot">&lt;-</span></span>
+<span id="cb192-2"><a href="#cb192-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tibble</span>(<span class="at">weight =</span> <span class="dv">25</span><span class="sc">:</span><span class="dv">70</span>) <span class="sc">|&gt;</span> </span>
+<span id="cb192-3"><a href="#cb192-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">weight_c =</span> weight <span class="sc">-</span> <span class="fu">mean</span>(d2<span class="sc">$</span>weight))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb193"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb193-1"><a href="#cb193-1" aria-hidden="true" tabindex="-1"></a>pred_height <span class="ot">&lt;-</span></span>
+<span id="cb193-2"><a href="#cb193-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">predict</span>(b4<span class="fl">.3</span>,</span>
+<span id="cb193-3"><a href="#cb193-3" aria-hidden="true" tabindex="-1"></a>          <span class="at">newdata =</span> weight_seq) <span class="sc">|&gt;</span> </span>
+<span id="cb193-4"><a href="#cb193-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">data.frame</span>() <span class="sc">|&gt;</span> </span>
+<span id="cb193-5"><a href="#cb193-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">bind_cols</span>(weight_seq)</span>
+<span id="cb193-6"><a href="#cb193-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb193-7"><a href="#cb193-7" aria-hidden="true" tabindex="-1"></a>pred_height <span class="sc">|&gt;</span> </span>
+<span id="cb193-8"><a href="#cb193-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">slice</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">6</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>  Estimate Est.Error     Q2.5    Q97.5 weight  weight_c
+1 136.6109  5.109754 126.4106 146.3815     25 -19.99049
+2 137.3971  5.191504 127.2560 147.4412     26 -18.99049
+3 138.4999  5.139815 128.1647 148.3033     27 -17.99049
+4 139.0619  5.228668 129.0062 149.2655     28 -16.99049
+5 140.1627  5.112356 130.2028 150.1482     29 -15.99049
+6 140.9356  5.177872 130.7200 150.9683     30 -14.99049</code></pre>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb195"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb195-1"><a href="#cb195-1" aria-hidden="true" tabindex="-1"></a>d2 <span class="sc">|&gt;</span> </span>
+<span id="cb195-2"><a href="#cb195-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> weight)) <span class="sc">+</span></span>
+<span id="cb195-3"><a href="#cb195-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_ribbon</span>(<span class="at">data =</span> pred_height,</span>
+<span id="cb195-4"><a href="#cb195-4" aria-hidden="true" tabindex="-1"></a>              <span class="fu">aes</span>(<span class="at">ymin =</span> Q2<span class="fl">.5</span>, <span class="at">ymax =</span> Q97<span class="fl">.5</span>),</span>
+<span id="cb195-5"><a href="#cb195-5" aria-hidden="true" tabindex="-1"></a>              <span class="at">fill =</span> <span class="st">"grey83"</span>) <span class="sc">+</span></span>
+<span id="cb195-6"><a href="#cb195-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_smooth</span>(<span class="at">data =</span> mu_summary,</span>
+<span id="cb195-7"><a href="#cb195-7" aria-hidden="true" tabindex="-1"></a>              <span class="fu">aes</span>(<span class="at">y =</span> Estimate, <span class="at">ymin =</span> Q2<span class="fl">.5</span>, <span class="at">ymax =</span> Q97<span class="fl">.5</span>),</span>
+<span id="cb195-8"><a href="#cb195-8" aria-hidden="true" tabindex="-1"></a>              <span class="at">stat =</span> <span class="st">"identity"</span>,</span>
+<span id="cb195-9"><a href="#cb195-9" aria-hidden="true" tabindex="-1"></a>              <span class="at">fill =</span> <span class="st">"grey70"</span>, <span class="at">color =</span> <span class="st">"black"</span>, <span class="at">alpha =</span> <span class="dv">1</span>, <span class="at">linewidth =</span> <span class="dv">1</span><span class="sc">/</span><span class="dv">2</span>) <span class="sc">+</span></span>
+<span id="cb195-10"><a href="#cb195-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="fu">aes</span>(<span class="at">y =</span> height),</span>
+<span id="cb195-11"><a href="#cb195-11" aria-hidden="true" tabindex="-1"></a>             <span class="at">color =</span> <span class="st">"navyblue"</span>, <span class="at">shape =</span> <span class="dv">1</span>, <span class="at">size =</span> <span class="fl">1.5</span>, <span class="at">alpha =</span> <span class="dv">2</span><span class="sc">/</span><span class="dv">3</span>) <span class="sc">+</span></span>
+<span id="cb195-12"><a href="#cb195-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_cartesian</span>(<span class="at">xlim =</span> <span class="fu">range</span>(d2<span class="sc">$</span>weight),</span>
+<span id="cb195-13"><a href="#cb195-13" aria-hidden="true" tabindex="-1"></a>                  <span class="at">ylim =</span> <span class="fu">range</span>(d2<span class="sc">$</span>height)) <span class="sc">+</span></span>
+<span id="cb195-14"><a href="#cb195-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">text =</span> <span class="fu">element_text</span>(<span class="at">family =</span> <span class="st">"Times"</span>),</span>
+<span id="cb195-15"><a href="#cb195-15" aria-hidden="true" tabindex="-1"></a>        <span class="at">panel.grid =</span> <span class="fu">element_blank</span>())</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="chapter_4_brms_files/figure-html/unnamed-chunk-92-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<section id="overthinking-rolling-your-own-predict" class="level5">
+<h5 class="anchored" data-anchor-id="overthinking-rolling-your-own-predict">4.4.3.5.1 Overthinking: Rolling your own predict()</h5>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb196"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb196-1"><a href="#cb196-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 'predict()' by hand</span></span>
+<span id="cb196-2"><a href="#cb196-2" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">4</span>)</span>
+<span id="cb196-3"><a href="#cb196-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb196-4"><a href="#cb196-4" aria-hidden="true" tabindex="-1"></a>post <span class="sc">|&gt;</span> </span>
+<span id="cb196-5"><a href="#cb196-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">expand_grid</span>(<span class="at">weight =</span> <span class="dv">25</span><span class="sc">:</span><span class="dv">70</span>) <span class="sc">|&gt;</span> </span>
+<span id="cb196-6"><a href="#cb196-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">weight_c =</span> weight <span class="sc">-</span> <span class="fu">mean</span>(d2<span class="sc">$</span>weight)) <span class="sc">|&gt;</span> </span>
+<span id="cb196-7"><a href="#cb196-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">sim_height =</span> <span class="fu">rnorm</span>(<span class="fu">n</span>(),</span>
+<span id="cb196-8"><a href="#cb196-8" aria-hidden="true" tabindex="-1"></a>                            <span class="at">mean =</span> b_Intercept <span class="sc">+</span> b_weight_c <span class="sc">*</span> weight_c,</span>
+<span id="cb196-9"><a href="#cb196-9" aria-hidden="true" tabindex="-1"></a>                            <span class="at">sd =</span> sigma)) <span class="sc">|&gt;</span> </span>
+<span id="cb196-10"><a href="#cb196-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(weight) <span class="sc">|&gt;</span> </span>
+<span id="cb196-11"><a href="#cb196-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarize</span>(<span class="at">mean =</span> <span class="fu">mean</span>(sim_height),</span>
+<span id="cb196-12"><a href="#cb196-12" aria-hidden="true" tabindex="-1"></a>            <span class="at">ll =</span> <span class="fu">quantile</span>(sim_height, <span class="at">prob =</span> .<span class="dv">025</span>),</span>
+<span id="cb196-13"><a href="#cb196-13" aria-hidden="true" tabindex="-1"></a>            <span class="at">ul =</span> <span class="fu">quantile</span>(sim_height, <span class="at">prob =</span> .<span class="dv">975</span>)) <span class="sc">|&gt;</span> </span>
+<span id="cb196-14"><a href="#cb196-14" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb196-15"><a href="#cb196-15" aria-hidden="true" tabindex="-1"></a>  <span class="co">#plot</span></span>
+<span id="cb196-16"><a href="#cb196-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> weight)) <span class="sc">+</span></span>
+<span id="cb196-17"><a href="#cb196-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_smooth</span>(<span class="fu">aes</span>(<span class="at">y =</span> mean, <span class="at">ymin =</span> ll, <span class="at">ymax =</span> ul),</span>
+<span id="cb196-18"><a href="#cb196-18" aria-hidden="true" tabindex="-1"></a>              <span class="at">stat =</span> <span class="st">"identity"</span>,</span>
+<span id="cb196-19"><a href="#cb196-19" aria-hidden="true" tabindex="-1"></a>              <span class="at">fill =</span> <span class="st">"grey83"</span>, <span class="at">color =</span> <span class="st">"black"</span>, <span class="at">alpha =</span> <span class="dv">1</span>, <span class="at">linewidth =</span> <span class="dv">1</span><span class="sc">/</span><span class="dv">2</span>) <span class="sc">+</span></span>
+<span id="cb196-20"><a href="#cb196-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">data =</span> d2,</span>
+<span id="cb196-21"><a href="#cb196-21" aria-hidden="true" tabindex="-1"></a>             <span class="fu">aes</span>(<span class="at">y =</span> height),</span>
+<span id="cb196-22"><a href="#cb196-22" aria-hidden="true" tabindex="-1"></a>             <span class="at">color =</span> <span class="st">"navyblue"</span>, <span class="at">shape =</span> <span class="dv">1</span>, <span class="at">size =</span> <span class="fl">1.5</span>, <span class="at">alpha =</span> <span class="dv">2</span><span class="sc">/</span><span class="dv">3</span>) <span class="sc">+</span></span>
+<span id="cb196-23"><a href="#cb196-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_cartesian</span>(<span class="at">xlim =</span> <span class="fu">range</span>(d2<span class="sc">$</span>weight),</span>
+<span id="cb196-24"><a href="#cb196-24" aria-hidden="true" tabindex="-1"></a>                  <span class="at">ylim =</span> <span class="fu">range</span>(d2<span class="sc">$</span>height)) <span class="sc">+</span></span>
+<span id="cb196-25"><a href="#cb196-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">text =</span> <span class="fu">element_text</span>(<span class="at">family =</span> <span class="st">"Times"</span>),</span>
+<span id="cb196-26"><a href="#cb196-26" aria-hidden="true" tabindex="-1"></a>        <span class="at">panel.grid =</span> <span class="fu">element_blank</span>())</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="chapter_4_brms_files/figure-html/unnamed-chunk-93-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+</section>
+</section>
+</section>
+<section id="curves-from-lines" class="level2">
+<h2 class="anchored" data-anchor-id="curves-from-lines">4.5 Curves from lines</h2>
+<section id="polynomial-regression" class="level3">
+<h3 class="anchored" data-anchor-id="polynomial-regression">4.5.1 Polynomial regression</h3>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb197"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb197-1"><a href="#cb197-1" aria-hidden="true" tabindex="-1"></a>d <span class="sc">|&gt;</span> <span class="fu">glimpse</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Rows: 544
+Columns: 4
+$ height &lt;dbl&gt; 151.7650, 139.7000, 136.5250, 156.8450, 145.4150, 163.8300, 149…
+$ weight &lt;dbl&gt; 47.82561, 36.48581, 31.86484, 53.04191, 41.27687, 62.99259, 38.…
+$ age    &lt;dbl&gt; 63.0, 63.0, 65.0, 41.0, 51.0, 35.0, 32.0, 27.0, 19.0, 54.0, 47.…
+$ male   &lt;int&gt; 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 1, 0, 1, 0, 0, …</code></pre>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb199"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb199-1"><a href="#cb199-1" aria-hidden="true" tabindex="-1"></a>d <span class="sc">|&gt;</span> </span>
+<span id="cb199-2"><a href="#cb199-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> weight, <span class="at">y=</span> height)) <span class="sc">+</span></span>
+<span id="cb199-3"><a href="#cb199-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">color =</span> <span class="st">"navyblue"</span>, <span class="at">shape =</span> <span class="dv">1</span>, <span class="at">size =</span> <span class="fl">1.5</span>, <span class="at">alpha =</span> <span class="dv">2</span><span class="sc">/</span><span class="dv">3</span>) <span class="sc">+</span></span>
+<span id="cb199-4"><a href="#cb199-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">annotate</span>(<span class="at">geom =</span> <span class="st">"text"</span>,</span>
+<span id="cb199-5"><a href="#cb199-5" aria-hidden="true" tabindex="-1"></a>           <span class="at">x =</span> <span class="dv">42</span>, <span class="at">y =</span> <span class="dv">115</span>,</span>
+<span id="cb199-6"><a href="#cb199-6" aria-hidden="true" tabindex="-1"></a>           <span class="at">label =</span> <span class="st">"This relation is</span><span class="sc">\n</span><span class="st">visibly curved."</span>,</span>
+<span id="cb199-7"><a href="#cb199-7" aria-hidden="true" tabindex="-1"></a>           <span class="at">family =</span> <span class="st">"Times"</span>) <span class="sc">+</span></span>
+<span id="cb199-8"><a href="#cb199-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">text =</span> <span class="fu">element_text</span>(<span class="at">family =</span> <span class="st">"Times"</span>),</span>
+<span id="cb199-9"><a href="#cb199-9" aria-hidden="true" tabindex="-1"></a>        <span class="at">panel.grid =</span> <span class="fu">element_blank</span>())</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="chapter_4_brms_files/figure-html/unnamed-chunk-95-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Standardize weight variable</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb200"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb200-1"><a href="#cb200-1" aria-hidden="true" tabindex="-1"></a>d <span class="ot">&lt;-</span></span>
+<span id="cb200-2"><a href="#cb200-2" aria-hidden="true" tabindex="-1"></a>  d <span class="sc">|&gt;</span> </span>
+<span id="cb200-3"><a href="#cb200-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">weight_s =</span> (weight <span class="sc">-</span> <span class="fu">mean</span>(weight)) <span class="sc">/</span> <span class="fu">sd</span>(weight)) <span class="sc">|&gt;</span> </span>
+<span id="cb200-4"><a href="#cb200-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">weight_s2 =</span> weight_s<span class="sc">^</span><span class="dv">2</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb201"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb201-1"><a href="#cb201-1" aria-hidden="true" tabindex="-1"></a>b4<span class="fl">.5</span> <span class="ot">&lt;-</span></span>
+<span id="cb201-2"><a href="#cb201-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">brm</span>(<span class="at">data =</span> d,</span>
+<span id="cb201-3"><a href="#cb201-3" aria-hidden="true" tabindex="-1"></a>      <span class="at">family =</span> gaussian,</span>
+<span id="cb201-4"><a href="#cb201-4" aria-hidden="true" tabindex="-1"></a>      height <span class="sc">~</span> <span class="dv">1</span> <span class="sc">+</span> weight_s <span class="sc">+</span> weight_s2,</span>
+<span id="cb201-5"><a href="#cb201-5" aria-hidden="true" tabindex="-1"></a>      <span class="at">prior =</span> <span class="fu">c</span>(<span class="fu">prior</span>(<span class="fu">normal</span>(<span class="dv">178</span>, <span class="dv">20</span>), <span class="at">class =</span> Intercept),</span>
+<span id="cb201-6"><a href="#cb201-6" aria-hidden="true" tabindex="-1"></a>                <span class="fu">prior</span>(<span class="fu">lognormal</span>(<span class="dv">0</span>, <span class="dv">1</span>), <span class="at">class =</span> b, <span class="at">coef =</span> <span class="st">"weight_s"</span>),</span>
+<span id="cb201-7"><a href="#cb201-7" aria-hidden="true" tabindex="-1"></a>                <span class="fu">prior</span>(<span class="fu">normal</span>(<span class="dv">0</span>, <span class="dv">1</span>), <span class="at">class =</span> b, <span class="at">coef =</span> <span class="st">"weight_s2"</span>),</span>
+<span id="cb201-8"><a href="#cb201-8" aria-hidden="true" tabindex="-1"></a>                <span class="fu">prior</span>(<span class="fu">uniform</span>(<span class="dv">0</span>, <span class="dv">50</span>), <span class="at">class =</span> sigma, <span class="at">ub =</span> <span class="dv">50</span>)),</span>
+<span id="cb201-9"><a href="#cb201-9" aria-hidden="true" tabindex="-1"></a>      <span class="at">iter =</span> <span class="dv">2000</span>, <span class="at">warmup =</span> <span class="dv">1000</span>, <span class="at">chains =</span> <span class="dv">4</span>, <span class="at">cores =</span> <span class="dv">4</span>,</span>
+<span id="cb201-10"><a href="#cb201-10" aria-hidden="true" tabindex="-1"></a>      <span class="at">seed =</span> <span class="dv">4</span>,</span>
+<span id="cb201-11"><a href="#cb201-11" aria-hidden="true" tabindex="-1"></a>      <span class="at">file =</span> <span class="st">"fits/b04.05"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb202"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb202-1"><a href="#cb202-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(b4<span class="fl">.5</span>, <span class="at">widths =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="chapter_4_brms_files/figure-html/unnamed-chunk-98-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb203"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb203-1"><a href="#cb203-1" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(b4<span class="fl">.5</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code> Family: gaussian 
+  Links: mu = identity; sigma = identity 
+Formula: height ~ 1 + weight_s + weight_s2 
+   Data: d (Number of observations: 544) 
+  Draws: 4 chains, each with iter = 2000; warmup = 1000; thin = 1;
+         total post-warmup draws = 4000
+
+Regression Coefficients:
+          Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+Intercept   146.04      0.38   145.31   146.79 1.00     3365     2810
+weight_s     21.74      0.28    21.19    22.31 1.00     3345     3029
+weight_s2    -7.79      0.28    -8.36    -7.25 1.00     3277     2961
+
+Further Distributional Parameters:
+      Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+sigma     5.80      0.18     5.47     6.16 1.00     3743     3134
+
+Draws were sampled using sampling(NUTS). For each parameter, Bulk_ESS
+and Tail_ESS are effective sample size measures, and Rhat is the potential
+scale reduction factor on split chains (at convergence, Rhat = 1).</code></pre>
+</div>
+</div>
+<p>Our quadratic plot requires new fitted() and predict() oriented wrangling</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb205"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb205-1"><a href="#cb205-1" aria-hidden="true" tabindex="-1"></a>weight_seq <span class="ot">&lt;-</span></span>
+<span id="cb205-2"><a href="#cb205-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tibble</span>(<span class="at">weight_s =</span> <span class="fu">seq</span>(<span class="at">from =</span> <span class="sc">-</span><span class="fl">2.5</span>, <span class="at">to =</span> <span class="fl">2.5</span>, <span class="at">length.out =</span> <span class="dv">30</span>)) <span class="sc">|&gt;</span> </span>
+<span id="cb205-3"><a href="#cb205-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">weight_s2 =</span> weight_s<span class="sc">^</span><span class="dv">2</span>)</span>
+<span id="cb205-4"><a href="#cb205-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb205-5"><a href="#cb205-5" aria-hidden="true" tabindex="-1"></a>fitd_quad <span class="ot">&lt;-</span></span>
+<span id="cb205-6"><a href="#cb205-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">fitted</span>(b4<span class="fl">.5</span>,</span>
+<span id="cb205-7"><a href="#cb205-7" aria-hidden="true" tabindex="-1"></a>         <span class="at">newdata =</span> weight_seq) <span class="sc">|&gt;</span> </span>
+<span id="cb205-8"><a href="#cb205-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">data.frame</span>() <span class="sc">|&gt;</span> </span>
+<span id="cb205-9"><a href="#cb205-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">bind_cols</span>(weight_seq)</span>
+<span id="cb205-10"><a href="#cb205-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb205-11"><a href="#cb205-11" aria-hidden="true" tabindex="-1"></a>pred_quad <span class="ot">&lt;-</span></span>
+<span id="cb205-12"><a href="#cb205-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">predict</span>(b4<span class="fl">.5</span>,</span>
+<span id="cb205-13"><a href="#cb205-13" aria-hidden="true" tabindex="-1"></a>          <span class="at">newdata =</span> weight_seq) <span class="sc">|&gt;</span> </span>
+<span id="cb205-14"><a href="#cb205-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">data.frame</span>() <span class="sc">|&gt;</span> </span>
+<span id="cb205-15"><a href="#cb205-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">bind_cols</span>(weight_seq)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb206"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb206-1"><a href="#cb206-1" aria-hidden="true" tabindex="-1"></a>p2 <span class="ot">&lt;-</span></span>
+<span id="cb206-2"><a href="#cb206-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="at">data =</span> d,</span>
+<span id="cb206-3"><a href="#cb206-3" aria-hidden="true" tabindex="-1"></a>         <span class="fu">aes</span>(<span class="at">x =</span> weight_s)) <span class="sc">+</span></span>
+<span id="cb206-4"><a href="#cb206-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_ribbon</span>(<span class="at">data =</span> pred_quad,</span>
+<span id="cb206-5"><a href="#cb206-5" aria-hidden="true" tabindex="-1"></a>              <span class="fu">aes</span>(<span class="at">ymin =</span> Q2<span class="fl">.5</span>, <span class="at">ymax =</span> Q97<span class="fl">.5</span>),</span>
+<span id="cb206-6"><a href="#cb206-6" aria-hidden="true" tabindex="-1"></a>              <span class="at">fill =</span> <span class="st">"grey83"</span>) <span class="sc">+</span></span>
+<span id="cb206-7"><a href="#cb206-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_smooth</span>(<span class="at">data =</span> fitd_quad,</span>
+<span id="cb206-8"><a href="#cb206-8" aria-hidden="true" tabindex="-1"></a>              <span class="fu">aes</span>(<span class="at">y =</span> Estimate, <span class="at">ymin =</span> Q2<span class="fl">.5</span>, <span class="at">ymax =</span> Q97<span class="fl">.5</span>),</span>
+<span id="cb206-9"><a href="#cb206-9" aria-hidden="true" tabindex="-1"></a>              <span class="at">stat =</span> <span class="st">"identity"</span>,</span>
+<span id="cb206-10"><a href="#cb206-10" aria-hidden="true" tabindex="-1"></a>              <span class="at">fill =</span> <span class="st">"grey70"</span>, <span class="at">color =</span> <span class="st">"black"</span>, <span class="at">alpha =</span> <span class="dv">1</span>, <span class="at">linewidth =</span> <span class="dv">1</span><span class="sc">/</span><span class="dv">2</span>) <span class="sc">+</span></span>
+<span id="cb206-11"><a href="#cb206-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="fu">aes</span>(<span class="at">y =</span> height),</span>
+<span id="cb206-12"><a href="#cb206-12" aria-hidden="true" tabindex="-1"></a>             <span class="at">color =</span> <span class="st">"navyblue"</span>, <span class="at">shape =</span> <span class="dv">1</span>, <span class="at">size =</span> <span class="fl">1.5</span>, <span class="at">alpha =</span> <span class="dv">1</span><span class="sc">/</span><span class="dv">3</span>) <span class="sc">+</span></span>
+<span id="cb206-13"><a href="#cb206-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">subtitle =</span> <span class="st">"quadratic"</span>,</span>
+<span id="cb206-14"><a href="#cb206-14" aria-hidden="true" tabindex="-1"></a>       <span class="at">y =</span> <span class="st">"height"</span>) <span class="sc">+</span></span>
+<span id="cb206-15"><a href="#cb206-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_cartesian</span>(<span class="at">xlim =</span> <span class="fu">range</span>(d<span class="sc">$</span>weight_s),</span>
+<span id="cb206-16"><a href="#cb206-16" aria-hidden="true" tabindex="-1"></a>                  <span class="at">ylim =</span> <span class="fu">range</span>(d<span class="sc">$</span>height)) <span class="sc">+</span></span>
+<span id="cb206-17"><a href="#cb206-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">text =</span> <span class="fu">element_text</span>(<span class="at">family =</span> <span class="st">"Times"</span>),</span>
+<span id="cb206-18"><a href="#cb206-18" aria-hidden="true" tabindex="-1"></a>        <span class="at">panel.grid =</span> <span class="fu">element_blank</span>())</span>
+<span id="cb206-19"><a href="#cb206-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb206-20"><a href="#cb206-20" aria-hidden="true" tabindex="-1"></a>p2</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="chapter_4_brms_files/figure-html/unnamed-chunk-101-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Create a cubic model</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb207"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb207-1"><a href="#cb207-1" aria-hidden="true" tabindex="-1"></a>d <span class="ot">&lt;-</span></span>
+<span id="cb207-2"><a href="#cb207-2" aria-hidden="true" tabindex="-1"></a>  d <span class="sc">%&gt;%</span> </span>
+<span id="cb207-3"><a href="#cb207-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">weight_s3 =</span> weight_s<span class="sc">^</span><span class="dv">3</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p>Fit the cubic model</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb208"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb208-1"><a href="#cb208-1" aria-hidden="true" tabindex="-1"></a>b4<span class="fl">.6</span> <span class="ot">&lt;-</span> </span>
+<span id="cb208-2"><a href="#cb208-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">brm</span>(<span class="at">data =</span> d, </span>
+<span id="cb208-3"><a href="#cb208-3" aria-hidden="true" tabindex="-1"></a>      <span class="at">family =</span> gaussian,</span>
+<span id="cb208-4"><a href="#cb208-4" aria-hidden="true" tabindex="-1"></a>      height <span class="sc">~</span> <span class="dv">1</span> <span class="sc">+</span> weight_s <span class="sc">+</span> weight_s2 <span class="sc">+</span> weight_s3,</span>
+<span id="cb208-5"><a href="#cb208-5" aria-hidden="true" tabindex="-1"></a>      <span class="at">prior =</span> <span class="fu">c</span>(<span class="fu">prior</span>(<span class="fu">normal</span>(<span class="dv">178</span>, <span class="dv">20</span>), <span class="at">class =</span> Intercept),</span>
+<span id="cb208-6"><a href="#cb208-6" aria-hidden="true" tabindex="-1"></a>                <span class="fu">prior</span>(<span class="fu">lognormal</span>(<span class="dv">0</span>, <span class="dv">1</span>), <span class="at">class =</span> b, <span class="at">coef =</span> <span class="st">"weight_s"</span>),</span>
+<span id="cb208-7"><a href="#cb208-7" aria-hidden="true" tabindex="-1"></a>                <span class="fu">prior</span>(<span class="fu">normal</span>(<span class="dv">0</span>, <span class="dv">1</span>), <span class="at">class =</span> b, <span class="at">coef =</span> <span class="st">"weight_s2"</span>),</span>
+<span id="cb208-8"><a href="#cb208-8" aria-hidden="true" tabindex="-1"></a>                <span class="fu">prior</span>(<span class="fu">normal</span>(<span class="dv">0</span>, <span class="dv">1</span>), <span class="at">class =</span> b, <span class="at">coef =</span> <span class="st">"weight_s3"</span>),</span>
+<span id="cb208-9"><a href="#cb208-9" aria-hidden="true" tabindex="-1"></a>                <span class="fu">prior</span>(<span class="fu">uniform</span>(<span class="dv">0</span>, <span class="dv">50</span>), <span class="at">class =</span> sigma, <span class="at">ub =</span> <span class="dv">50</span>)),</span>
+<span id="cb208-10"><a href="#cb208-10" aria-hidden="true" tabindex="-1"></a>      <span class="at">iter =</span> <span class="dv">2000</span>, <span class="at">warmup =</span> <span class="dv">1000</span>, <span class="at">chains =</span> <span class="dv">4</span>, <span class="at">cores =</span> <span class="dv">4</span>,</span>
+<span id="cb208-11"><a href="#cb208-11" aria-hidden="true" tabindex="-1"></a>      <span class="at">seed =</span> <span class="dv">4</span>,</span>
+<span id="cb208-12"><a href="#cb208-12" aria-hidden="true" tabindex="-1"></a>      <span class="at">file =</span> <span class="st">"fits/b04.06"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p>Fit the old linear model</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb209"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb209-1"><a href="#cb209-1" aria-hidden="true" tabindex="-1"></a>b4<span class="fl">.7</span> <span class="ot">&lt;-</span> </span>
+<span id="cb209-2"><a href="#cb209-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">brm</span>(<span class="at">data =</span> d, </span>
+<span id="cb209-3"><a href="#cb209-3" aria-hidden="true" tabindex="-1"></a>      <span class="at">family =</span> gaussian,</span>
+<span id="cb209-4"><a href="#cb209-4" aria-hidden="true" tabindex="-1"></a>      height <span class="sc">~</span> <span class="dv">1</span> <span class="sc">+</span> weight_s,</span>
+<span id="cb209-5"><a href="#cb209-5" aria-hidden="true" tabindex="-1"></a>      <span class="at">prior =</span> <span class="fu">c</span>(<span class="fu">prior</span>(<span class="fu">normal</span>(<span class="dv">178</span>, <span class="dv">20</span>), <span class="at">class =</span> Intercept),</span>
+<span id="cb209-6"><a href="#cb209-6" aria-hidden="true" tabindex="-1"></a>                <span class="fu">prior</span>(<span class="fu">lognormal</span>(<span class="dv">0</span>, <span class="dv">1</span>), <span class="at">class =</span> b, <span class="at">coef =</span> <span class="st">"weight_s"</span>),</span>
+<span id="cb209-7"><a href="#cb209-7" aria-hidden="true" tabindex="-1"></a>                <span class="fu">prior</span>(<span class="fu">uniform</span>(<span class="dv">0</span>, <span class="dv">50</span>), <span class="at">class =</span> sigma, <span class="at">ub =</span> <span class="dv">50</span>)),</span>
+<span id="cb209-8"><a href="#cb209-8" aria-hidden="true" tabindex="-1"></a>      <span class="at">iter =</span> <span class="dv">2000</span>, <span class="at">warmup =</span> <span class="dv">1000</span>, <span class="at">chains =</span> <span class="dv">4</span>, <span class="at">cores =</span> <span class="dv">4</span>,</span>
+<span id="cb209-9"><a href="#cb209-9" aria-hidden="true" tabindex="-1"></a>      <span class="at">seed =</span> <span class="dv">4</span>,</span>
+<span id="cb209-10"><a href="#cb209-10" aria-hidden="true" tabindex="-1"></a>      <span class="at">file =</span> <span class="st">"fits/b04.07"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p>Plot the cubic model</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb210"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb210-1"><a href="#cb210-1" aria-hidden="true" tabindex="-1"></a>weight_seq <span class="ot">&lt;-</span> </span>
+<span id="cb210-2"><a href="#cb210-2" aria-hidden="true" tabindex="-1"></a>  weight_seq <span class="sc">%&gt;%</span> </span>
+<span id="cb210-3"><a href="#cb210-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">weight_s3 =</span> weight_s<span class="sc">^</span><span class="dv">3</span>)</span>
+<span id="cb210-4"><a href="#cb210-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb210-5"><a href="#cb210-5" aria-hidden="true" tabindex="-1"></a>fitd_cub <span class="ot">&lt;-</span></span>
+<span id="cb210-6"><a href="#cb210-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">fitted</span>(b4<span class="fl">.6</span>, </span>
+<span id="cb210-7"><a href="#cb210-7" aria-hidden="true" tabindex="-1"></a>         <span class="at">newdata =</span> weight_seq) <span class="sc">%&gt;%</span></span>
+<span id="cb210-8"><a href="#cb210-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">as_tibble</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb210-9"><a href="#cb210-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">bind_cols</span>(weight_seq)</span>
+<span id="cb210-10"><a href="#cb210-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb210-11"><a href="#cb210-11" aria-hidden="true" tabindex="-1"></a>pred_cub <span class="ot">&lt;-</span></span>
+<span id="cb210-12"><a href="#cb210-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">predict</span>(b4<span class="fl">.6</span>, </span>
+<span id="cb210-13"><a href="#cb210-13" aria-hidden="true" tabindex="-1"></a>          <span class="at">newdata =</span> weight_seq) <span class="sc">%&gt;%</span></span>
+<span id="cb210-14"><a href="#cb210-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">as_tibble</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb210-15"><a href="#cb210-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">bind_cols</span>(weight_seq) </span>
+<span id="cb210-16"><a href="#cb210-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb210-17"><a href="#cb210-17" aria-hidden="true" tabindex="-1"></a>p3 <span class="ot">&lt;-</span></span>
+<span id="cb210-18"><a href="#cb210-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="at">data =</span> d, </span>
+<span id="cb210-19"><a href="#cb210-19" aria-hidden="true" tabindex="-1"></a>       <span class="fu">aes</span>(<span class="at">x =</span> weight_s)) <span class="sc">+</span></span>
+<span id="cb210-20"><a href="#cb210-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_ribbon</span>(<span class="at">data =</span> pred_cub, </span>
+<span id="cb210-21"><a href="#cb210-21" aria-hidden="true" tabindex="-1"></a>              <span class="fu">aes</span>(<span class="at">ymin =</span> Q2<span class="fl">.5</span>, <span class="at">ymax =</span> Q97<span class="fl">.5</span>),</span>
+<span id="cb210-22"><a href="#cb210-22" aria-hidden="true" tabindex="-1"></a>              <span class="at">fill =</span> <span class="st">"grey83"</span>) <span class="sc">+</span></span>
+<span id="cb210-23"><a href="#cb210-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_smooth</span>(<span class="at">data =</span> fitd_cub,</span>
+<span id="cb210-24"><a href="#cb210-24" aria-hidden="true" tabindex="-1"></a>              <span class="fu">aes</span>(<span class="at">y =</span> Estimate, <span class="at">ymin =</span> Q2<span class="fl">.5</span>, <span class="at">ymax =</span> Q97<span class="fl">.5</span>),</span>
+<span id="cb210-25"><a href="#cb210-25" aria-hidden="true" tabindex="-1"></a>              <span class="at">stat =</span> <span class="st">"identity"</span>,</span>
+<span id="cb210-26"><a href="#cb210-26" aria-hidden="true" tabindex="-1"></a>              <span class="at">fill =</span> <span class="st">"grey70"</span>, <span class="at">color =</span> <span class="st">"black"</span>, <span class="at">alpha =</span> <span class="dv">1</span>, <span class="at">linewidth =</span> <span class="dv">1</span><span class="sc">/</span><span class="dv">4</span>) <span class="sc">+</span></span>
+<span id="cb210-27"><a href="#cb210-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="fu">aes</span>(<span class="at">y =</span> height),</span>
+<span id="cb210-28"><a href="#cb210-28" aria-hidden="true" tabindex="-1"></a>             <span class="at">color =</span> <span class="st">"navyblue"</span>, <span class="at">shape =</span> <span class="dv">1</span>, <span class="at">size =</span> <span class="fl">1.5</span>, <span class="at">alpha =</span> <span class="dv">1</span><span class="sc">/</span><span class="dv">3</span>) <span class="sc">+</span></span>
+<span id="cb210-29"><a href="#cb210-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">subtitle =</span> <span class="st">"cubic"</span>,</span>
+<span id="cb210-30"><a href="#cb210-30" aria-hidden="true" tabindex="-1"></a>       <span class="at">y =</span> <span class="st">"height"</span>) <span class="sc">+</span></span>
+<span id="cb210-31"><a href="#cb210-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_cartesian</span>(<span class="at">xlim =</span> <span class="fu">range</span>(d<span class="sc">$</span>weight_s),</span>
+<span id="cb210-32"><a href="#cb210-32" aria-hidden="true" tabindex="-1"></a>                  <span class="at">ylim =</span> <span class="fu">range</span>(d<span class="sc">$</span>height)) <span class="sc">+</span></span>
+<span id="cb210-33"><a href="#cb210-33" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">text =</span> <span class="fu">element_text</span>(<span class="at">family =</span> <span class="st">"Times"</span>),</span>
+<span id="cb210-34"><a href="#cb210-34" aria-hidden="true" tabindex="-1"></a>        <span class="at">panel.grid =</span> <span class="fu">element_blank</span>())</span>
+<span id="cb210-35"><a href="#cb210-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb210-36"><a href="#cb210-36" aria-hidden="true" tabindex="-1"></a>p3</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="chapter_4_brms_files/figure-html/unnamed-chunk-105-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Plot the linear model</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb211"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb211-1"><a href="#cb211-1" aria-hidden="true" tabindex="-1"></a>fitd_line <span class="ot">&lt;-</span></span>
+<span id="cb211-2"><a href="#cb211-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">fitted</span>(b4<span class="fl">.7</span>, </span>
+<span id="cb211-3"><a href="#cb211-3" aria-hidden="true" tabindex="-1"></a>         <span class="at">newdata =</span> weight_seq) <span class="sc">%&gt;%</span></span>
+<span id="cb211-4"><a href="#cb211-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">as_tibble</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb211-5"><a href="#cb211-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">bind_cols</span>(weight_seq)</span>
+<span id="cb211-6"><a href="#cb211-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb211-7"><a href="#cb211-7" aria-hidden="true" tabindex="-1"></a>pred_line <span class="ot">&lt;-</span></span>
+<span id="cb211-8"><a href="#cb211-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">predict</span>(b4<span class="fl">.7</span>, </span>
+<span id="cb211-9"><a href="#cb211-9" aria-hidden="true" tabindex="-1"></a>          <span class="at">newdata =</span> weight_seq) <span class="sc">%&gt;%</span></span>
+<span id="cb211-10"><a href="#cb211-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">as_tibble</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb211-11"><a href="#cb211-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">bind_cols</span>(weight_seq) </span>
+<span id="cb211-12"><a href="#cb211-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb211-13"><a href="#cb211-13" aria-hidden="true" tabindex="-1"></a>p1 <span class="ot">&lt;-</span></span>
+<span id="cb211-14"><a href="#cb211-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="at">data =</span> d, </span>
+<span id="cb211-15"><a href="#cb211-15" aria-hidden="true" tabindex="-1"></a>       <span class="fu">aes</span>(<span class="at">x =</span> weight_s)) <span class="sc">+</span></span>
+<span id="cb211-16"><a href="#cb211-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_ribbon</span>(<span class="at">data =</span> pred_line, </span>
+<span id="cb211-17"><a href="#cb211-17" aria-hidden="true" tabindex="-1"></a>              <span class="fu">aes</span>(<span class="at">ymin =</span> Q2<span class="fl">.5</span>, <span class="at">ymax =</span> Q97<span class="fl">.5</span>),</span>
+<span id="cb211-18"><a href="#cb211-18" aria-hidden="true" tabindex="-1"></a>              <span class="at">fill =</span> <span class="st">"grey83"</span>) <span class="sc">+</span></span>
+<span id="cb211-19"><a href="#cb211-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_smooth</span>(<span class="at">data =</span> fitd_line,</span>
+<span id="cb211-20"><a href="#cb211-20" aria-hidden="true" tabindex="-1"></a>              <span class="fu">aes</span>(<span class="at">y =</span> Estimate, <span class="at">ymin =</span> Q2<span class="fl">.5</span>, <span class="at">ymax =</span> Q97<span class="fl">.5</span>),</span>
+<span id="cb211-21"><a href="#cb211-21" aria-hidden="true" tabindex="-1"></a>              <span class="at">stat =</span> <span class="st">"identity"</span>,</span>
+<span id="cb211-22"><a href="#cb211-22" aria-hidden="true" tabindex="-1"></a>              <span class="at">fill =</span> <span class="st">"grey70"</span>, <span class="at">color =</span> <span class="st">"black"</span>, <span class="at">alpha =</span> <span class="dv">1</span>, <span class="at">linewidth =</span> <span class="dv">1</span><span class="sc">/</span><span class="dv">4</span>) <span class="sc">+</span></span>
+<span id="cb211-23"><a href="#cb211-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="fu">aes</span>(<span class="at">y =</span> height),</span>
+<span id="cb211-24"><a href="#cb211-24" aria-hidden="true" tabindex="-1"></a>             <span class="at">color =</span> <span class="st">"navyblue"</span>, <span class="at">shape =</span> <span class="dv">1</span>, <span class="at">size =</span> <span class="fl">1.5</span>, <span class="at">alpha =</span> <span class="dv">1</span><span class="sc">/</span><span class="dv">3</span>) <span class="sc">+</span></span>
+<span id="cb211-25"><a href="#cb211-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">subtitle =</span> <span class="st">"linear"</span>,</span>
+<span id="cb211-26"><a href="#cb211-26" aria-hidden="true" tabindex="-1"></a>       <span class="at">y =</span> <span class="st">"height"</span>) <span class="sc">+</span></span>
+<span id="cb211-27"><a href="#cb211-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_cartesian</span>(<span class="at">xlim =</span> <span class="fu">range</span>(d<span class="sc">$</span>weight_s),</span>
+<span id="cb211-28"><a href="#cb211-28" aria-hidden="true" tabindex="-1"></a>                  <span class="at">ylim =</span> <span class="fu">range</span>(d<span class="sc">$</span>height)) <span class="sc">+</span></span>
+<span id="cb211-29"><a href="#cb211-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">text =</span> <span class="fu">element_text</span>(<span class="at">family =</span> <span class="st">"Times"</span>),</span>
+<span id="cb211-30"><a href="#cb211-30" aria-hidden="true" tabindex="-1"></a>        <span class="at">panel.grid =</span> <span class="fu">element_blank</span>())</span>
+<span id="cb211-31"><a href="#cb211-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb211-32"><a href="#cb211-32" aria-hidden="true" tabindex="-1"></a>p1</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="chapter_4_brms_files/figure-html/unnamed-chunk-106-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Patchwork</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb212"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb212-1"><a href="#cb212-1" aria-hidden="true" tabindex="-1"></a>p1 <span class="sc">|</span> p2 <span class="sc">|</span> p3</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="chapter_4_brms_files/figure-html/unnamed-chunk-107-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>You can apply McElreath’s conversion trick within the ggplot2 environment, too</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb213"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb213-1"><a href="#cb213-1" aria-hidden="true" tabindex="-1"></a>at <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">2</span>, <span class="sc">-</span><span class="dv">1</span>, <span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">2</span>)</span>
+<span id="cb213-2"><a href="#cb213-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb213-3"><a href="#cb213-3" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(<span class="at">data =</span> d, </span>
+<span id="cb213-4"><a href="#cb213-4" aria-hidden="true" tabindex="-1"></a>       <span class="fu">aes</span>(<span class="at">x =</span> weight_s)) <span class="sc">+</span></span>
+<span id="cb213-5"><a href="#cb213-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_ribbon</span>(<span class="at">data =</span> pred_cub, </span>
+<span id="cb213-6"><a href="#cb213-6" aria-hidden="true" tabindex="-1"></a>              <span class="fu">aes</span>(<span class="at">ymin =</span> Q2<span class="fl">.5</span>, <span class="at">ymax =</span> Q97<span class="fl">.5</span>),</span>
+<span id="cb213-7"><a href="#cb213-7" aria-hidden="true" tabindex="-1"></a>              <span class="at">fill =</span> <span class="st">"grey83"</span>) <span class="sc">+</span></span>
+<span id="cb213-8"><a href="#cb213-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="fu">aes</span>(<span class="at">y =</span> height),</span>
+<span id="cb213-9"><a href="#cb213-9" aria-hidden="true" tabindex="-1"></a>             <span class="at">color =</span> <span class="st">"navyblue"</span>, <span class="at">shape =</span> <span class="dv">1</span>, <span class="at">size =</span> <span class="fl">1.5</span>, <span class="at">alpha =</span> <span class="dv">1</span><span class="sc">/</span><span class="dv">3</span>) <span class="sc">+</span></span>
+<span id="cb213-10"><a href="#cb213-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_cartesian</span>(<span class="at">xlim =</span> <span class="fu">range</span>(d<span class="sc">$</span>weight_s)) <span class="sc">+</span></span>
+<span id="cb213-11"><a href="#cb213-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">text =</span> <span class="fu">element_text</span>(<span class="at">family =</span> <span class="st">"Times"</span>),</span>
+<span id="cb213-12"><a href="#cb213-12" aria-hidden="true" tabindex="-1"></a>        <span class="at">panel.grid =</span> <span class="fu">element_blank</span>()) <span class="sc">+</span></span>
+<span id="cb213-13"><a href="#cb213-13" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb213-14"><a href="#cb213-14" aria-hidden="true" tabindex="-1"></a>  <span class="co"># here it is!</span></span>
+<span id="cb213-15"><a href="#cb213-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_continuous</span>(<span class="st">"standardized weight converted back"</span>,</span>
+<span id="cb213-16"><a href="#cb213-16" aria-hidden="true" tabindex="-1"></a>                     <span class="at">breaks =</span> at,</span>
+<span id="cb213-17"><a href="#cb213-17" aria-hidden="true" tabindex="-1"></a>                     <span class="at">labels =</span> <span class="fu">round</span>(at<span class="sc">*</span><span class="fu">sd</span>(d<span class="sc">$</span>weight) <span class="sc">+</span> <span class="fu">mean</span>(d<span class="sc">$</span>weight), <span class="dv">1</span>))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="chapter_4_brms_files/figure-html/unnamed-chunk-108-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
 </section>
 </section>
 </section>
