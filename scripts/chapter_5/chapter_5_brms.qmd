@@ -1,0 +1,585 @@
+---
+title: "Chapter 5 BRMS"
+format: html
+---
+# The Many Variables & The Spurious Waffles
+
+```{r}
+rm(list = ls())
+library(tidyverse)
+```
+## 5.1 Spurious associations
+```{r}
+data(WaffleDivorce, package = "rethinking")
+d <- WaffleDivorce
+```
+
+Add new columns for standardized value
+```{r}
+d <-
+  d |> 
+  mutate(d = rethinking::standardize(Divorce),
+         m = rethinking::standardize(Marriage),
+         a = rethinking::standardize(MedianAgeMarriage))
+```
+
+```{r}
+rm(WaffleDivorce)
+library(brms)
+```
+
+Look for pattern in the existing data with simple lm line
+```{r}
+library(ggrepel)
+
+d |> 
+  ggplot(aes(x = WaffleHouses / Population, y = Divorce)) +
+  stat_smooth(method = "lm", fullrange = T, linewidth = 1/2,
+              color = "firebrick4", fill = "firebrick", alpha = 1/5) +
+  geom_point(size = 1.5, color = "firebrick4", alpha = 1/2) +
+  geom_text_repel(data = d |> 
+                    filter(Loc %in% c("ME", "OK", "AR", "AL", "GA", "SC", "NJ")),
+                  aes(label = Loc),
+                  size = 3, seed = 1042) +
+  scale_x_continuous("Waffle Houses per million", limits = c(0, 55)) +
+  ylab("Divorce rate") +
+  coord_cartesian(xlim = c(0, 50), ylim = c(5, 15)) +
+  theme_bw() + 
+  theme(panel.grid = element_blank())
+```
+
+Create lm model with median age as predictors
+```{r}
+b5.1 <-
+  brm(data = d,
+      family = gaussian(),
+      d ~ 1 + a,
+      prior = c(prior(normal(0, 0.2), class = Intercept),
+                prior(normal(0, 0.5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 5, sample_prior = T,
+      file = "fits/b05.01")
+```
+
+Sample from prior
+```{r}
+prior <- prior_draws(b5.1)
+
+prior |> glimpse()
+```
+Prior predictive distributions
+```{r}
+set.seed(5)
+
+prior |> 
+  slice_sample(n = 50) |> 
+  rownames_to_column("draw") |> 
+  expand_grid(a = c(-2, 2)) |> 
+  mutate(d = Intercept + b * a) |> 
+  
+  ggplot(aes(x = a, y = d)) +
+  geom_line(aes(group = draw),
+            color = "firebrick", alpha = .4) +
+  labs(x = "Median age marriage (std)",
+       y = "Divorce rate (std)") +
+  coord_cartesian(ylim = c(-2, 2)) +
+  theme_bw() +
+  theme(panel.grid = element_blank())
+```
+
+Posterior predictions
+```{r}
+# determine the range of 'a' values we'd like to feed into 'fitted()'
+nd <- tibble(a = seq(from = -3, to = 3.2, length.out = 30))
+
+# now use 'fitted()' to get the model-implied trajectories
+fitted(b5.1,
+       newdata = nd) |> 
+  data.frame() |> 
+  bind_cols(nd) |> 
+  
+  # plot
+  ggplot(aes(x = a)) +
+  geom_smooth(aes(y = Estimate, ymin = Q2.5, ymax = Q97.5),
+              stat = "identity",
+              fill = "firebrick", color = "firebrick4", alpha = 1/5, linewidth = 1/4) +
+  geom_point(data = d,
+             aes(y = d),
+             size = 2, color = "firebrick4") +
+  labs(x = "Median age marriage (std)",
+       y = "Divorce rate (std)") +
+  coord_cartesian(xlim = range(d$a),
+                  ylim = range(d$d)) +
+  theme_bw() +
+  theme(panel.grid = element_blank())
+```
+
+```{r}
+print(b5.1)
+```
+
+Second univariable model
+```{r}
+b5.2 <-
+  brm(data = d,
+      family = gaussian(),
+      d ~ 1 + m,
+      prior = c(prior(normal(0, 0.2), class = Intercept),
+                prior(normal(0, 0.5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 5,
+      file = "fits/b05.02")
+```
+
+```{r}
+print(b5.2)
+```
+
+```{r}
+nd <- tibble(m = seq(from = -2.5, to = 3.5, length.out = 30))
+
+fitted(b5.2,
+       newdata = nd) |> 
+  data.frame() |> 
+  bind_cols(nd) |> 
+  
+  ggplot(aes(x = m)) +
+  geom_smooth(aes(y = Estimate, ymin = Q2.5, ymax = Q97.5),
+              stat = "identity",
+              fill = "firebrick", color = "firebrick4", alpha = 1/5, linewidth = 1/4) +
+  geom_point(data = d,
+             aes(y = d),
+             size = 2, color = "firebrick4") +
+  labs(x = "Marriage rate (std)",
+       y = "Divorce rate (std)") +
+  coord_cartesian(xlim = range(d$m),
+                  ylim = range(d$d)) +
+  theme_bw() +
+  theme(panel.grid = element_blank())
+```
+### 5.1.1 Think before you regress
+```{r}
+library(dagitty)
+library(ggdag)
+```
+
+```{r}
+set.seed(5)
+
+dagify(M ~ A,
+       D ~ A + M) |> 
+  ggdag(node_size = 8)
+```
+
+```{r}
+dag_coords <-
+  tibble(name = c("A", "M", "D"),
+         x    = c(1, 3, 2),
+         y    = c(2, 2, 1))
+
+p1 <-
+  dagify(M ~ A,
+         D ~ A + M,
+         coords = dag_coords) %>%
+  
+  ggplot(aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_dag_point(color = "firebrick", alpha = 1/4, size = 10) +
+  geom_dag_text(color = "firebrick") +
+  geom_dag_edges(edge_color = "firebrick") +
+  scale_x_continuous(NULL, breaks = NULL, expand = c(0.1, 0.1)) +
+  scale_y_continuous(NULL, breaks = NULL, expand = c(0.2, 0.2)) +
+  theme_bw() +
+  theme(panel.grid = element_blank())
+
+p1
+```
+Alternative DAG model
+```{r}
+p2 <-
+  dagify(M ~ A,
+         D ~ A,
+         coords = dag_coords) %>%
+  
+  ggplot(aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_dag_point(color = "firebrick", alpha = 1/4, size = 10) +
+  geom_dag_text(color = "firebrick") +
+  geom_dag_edges(edge_color = "firebrick") +
+  scale_x_continuous(NULL, breaks = NULL, expand = c(0.1, 0.1)) +
+  scale_y_continuous(NULL, breaks = NULL, expand = c(0.2, 0.2)) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) 
+
+p2
+```
+
+### 5.1.2 Testable implications
+```{r}
+library(patchwork)
+
+p1 | p2
+```
+```{r}
+d |> 
+  select(d:a) |> 
+  cor()
+```
+
+```{r}
+library(psych)
+
+d |> 
+  select(d:a) |> 
+  lowerCor(digits = 3)
+```
+
+Our second DAG, above, suggests "that $D$ is independent of $M$, conditional on $A$" (p. 130). We can use the dagitty:impliedConditionalIndependencies() function to express that conditional independence in formal notation.
+```{r}
+dagitty('dag{ D <- A -> M}') |> 
+  impliedConditionalIndependencies()
+```
+
+The lack of conditional dependencies in the first DAG may be expressed this way.
+```{r}
+dagitty('dag{D <- A -> M -> D}') |> 
+  impliedConditionalIndependencies()
+```
+
+### 5.1.3 Multiple regression notation
+$$
+\begin{align}
+Divorce\_std\_{i} &\sim Normal(\mu_{i}, \sigma) \\
+\mu_{i} &= \alpha + \beta_{1} Marriage\_std_{i} + \beta_{2} MedianAgeMarriage\_std_{2} \\
+\alpha &\sim Normal(0, 0.2) \\
+\beta_{1} &\sim Normal(0, 0.5) \\
+\beta_{2} &\sim Normal(0, 0.5) \\
+\sigma &\sim Exponential(1) \\
+\end{align}
+$$
+
+### 5.1.4 Approximating the posterior.
+```{r}
+b5.3 <-
+  brm(data = d,
+      family = gaussian(),
+      d ~ 1 + m + a,
+      prior = c(prior(normal(0, 0.2), class = Intercept),
+                prior(normal(0, 0.5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 5,
+      file = "fits/b05.03")
+```
+
+```{r}
+print(b5.3)
+```
+
+```{r}
+# first, extract and rename the necessary posterior parameters
+bind_cols(
+  as_draws_df(b5.1) |> 
+    transmute("b5.1_beta[A]" = b_a),
+  as_draws_df(b5.2) |> 
+    transmute("b5.2_beta[M]" = b_m),
+  as_draws_df(b5.3) |> 
+    transmute("b5.3_beta[M]" = b_m,
+              "b5.3_beta[A]" = b_a)
+) |> 
+  # convert them to the long format, group, and get the posterior summaries
+  pivot_longer(everything()) |> 
+  group_by(name) |> 
+  summarise(mean = mean(value),
+            ll = quantile(value, prob = .025),
+            ul = quantile(value, prob = .975)) |> 
+  # since the 'key' variable is really two variables in one, here we splot them up
+  separate(col = name, into = c("fit", "parameter"), sep = "_") |> 
+
+# plot
+ggplot(aes(x = mean, xmin = ll, xmax = ul, y = fit)) +
+  geom_vline(xintercept = 0, color = "firebrick", alpha = 1/5) +
+  geom_pointrange(color = "firebrick") +
+  labs(x = "posterior", y = NULL) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        strip.background = element_rect(fill = "transparent", color = "transparent")) +
+  facet_wrap(~ parameter, ncol = 1, labeller = label_parsed)
+```
+
+```{r}
+dagitty("dag{ D <- A -> M }") |> 
+  impliedConditionalIndependencies()
+```
+
+#### 5.1.4.1 Overthinking: Simulating the divorce example
+```{r}
+# how many states would you like?
+n <- 50
+
+set.seed(50)
+sim_d <-
+  tibble(age = rnorm(n, mean = 0, sd = 1)) |>  # sim A
+  mutate(mar = rnorm(n, mean = -age, sd = 1),  # sim A -> M
+         div = rnorm(n, mean = age, sd = 1))   # sim A -> D
+
+head(sim_d)
+```
+We simulated those data based on this formulation
+```{r}
+dagitty("dag{divorce <- age -> marriage}") |> 
+  impliedConditionalIndependencies()
+```
+
+```{r}
+pairs(sim_d, col = "firebrick4")
+```
+
+If we use the ```update()``` function, we can refit the last models in haste
+```{r}
+b5.1_sim <-
+  update(b5.1,
+         newdata = sim_d,
+         formula = div ~ 1 + age,
+         seed = 5,
+         file = "fits/b05.01_sim")
+
+b5.2_sim <-
+  update(b5.2,
+         newdata = sim_d,
+         formula = div ~ 1 + mar,
+         seed = 5,
+         file = "fits/b05.02_sim")
+
+b5.3_sim <-
+  update(b5.3,
+         newdata = sim_d,
+         formula = div ~ 1 + mar + age,
+         seed = 5,
+         file = "fits/b05.03_sim")
+```
+
+```{r}
+bind_cols(
+  as_draws_df(b5.1_sim) %>% 
+    transmute(`b5.1_beta[A]` = b_age),
+  as_draws_df(b5.2_sim) %>% 
+    transmute(`b5.2_beta[M]` = b_mar),
+  as_draws_df(b5.3_sim) %>% 
+    transmute(`b5.3_beta[M]` = b_mar,
+              `b5.3_beta[A]` = b_age)
+  ) %>% 
+  pivot_longer(everything()) %>% 
+  group_by(name) %>% 
+  summarise(mean = mean(value),
+            ll   = quantile(value, prob = .025),
+            ul   = quantile(value, prob = .975)) %>% 
+  # since the `key` variable is really two variables in one, here we split them up
+  separate(name, into = c("fit", "parameter"), sep = "_") %>% 
+  
+  # plot!
+  ggplot(aes(x = mean, xmin = ll, xmax = ul, y = fit)) +
+  geom_vline(xintercept = 0, color = "firebrick", alpha = 1/5) +
+  geom_pointrange(color = "firebrick") +
+  labs(x = "posterior", y = NULL) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        strip.background = element_blank()) +
+  facet_wrap(~ parameter, ncol = 1, labeller = label_parsed)
+```
+
+### 5.1.5 Plotting multivariate posteriors
+#### 5.1.5.1 Predictor residual plots
+```{r}
+b5.4 <-
+  brm(data = d,
+      family = gaussian,
+      m ~ 1 + a,
+      prior = c(prior(normal(0, 0.2), class = Intercept),
+                prior(normal(0, 0.5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 5,
+      file = "fits/b05.04")
+```
+
+```{r}
+print(b5.4)
+```
+
+With fitted(), we compute the expected values for each state (with the exception of Nevada). Since the a values for each state are in the date we used to fit the model, we’ll omit the newdata argument.
+```{r}
+f <-
+  fitted(b5.4) |> 
+  data.frame() |> 
+  bind_cols(d)
+
+glimpse(f)
+```
+
+```{r}
+p1 <-
+  f |> 
+  ggplot(aes(x = a, y = m)) +
+  geom_point(size = 2, shape = 1, color = "firebrick4") +
+  geom_segment(aes(xend = a, yend = Estimate),
+               linewidth = 1/4) +
+  geom_line(aes(y = Estimate),
+            color = "firebrick4") +
+  geom_text_repel(data = . %>% filter(Loc %in% c("WY", "ND", "ME", "HI", "DC")),  
+                  aes(label = Loc), 
+                  size = 3, seed = 14) +
+  labs(x = "Age at marriage (std)",
+       y = "Marriage rate (std)") +
+  coord_cartesian(ylim = range(d$m)) +
+  theme_bw() +
+  theme(panel.grid = element_blank())
+
+p1
+```
+
+Residuals
+```{r}
+r <-
+  residuals(b5.4) |> 
+  # to use this in ggplot2, we need to make it a tibble or data frame
+  data.frame() |> 
+  bind_cols(d)
+
+p3 <-
+  r |> 
+  ggplot(aes(x = Estimate, y = d)) +
+  stat_smooth(method = "lm", fullrange = T,
+              color = "firebrick4", fill = "firebrick4",
+              alpha = 1/5, linewidth = 1/2) +
+  geom_vline(xintercept = 0, linetype = 2, color = "grey50") +
+  geom_point(size = 2, color = "firebrick4", alpha = 2/3) +
+  geom_text_repel(data = . %>% filter(Loc %in% c("WY", "ND", "ME", "HI", "DC")),  
+                  aes(label = Loc), 
+                  size = 3, seed = 5) +
+  scale_x_continuous(limits = c(-2, 2)) +
+  coord_cartesian(xlim = range(r$Estimate)) +
+  labs(x = "Marriage rate residuals",
+       y = "Divorce rate (std)") +
+  theme_bw() +
+  theme(panel.grid = element_blank())
+
+p3
+```
+
+To get the ```MedianAgeMarriage_s``` residuals, we have to fit the corresponding model where ```m``` predicts ```a```.
+```{r}
+b5.4b <-
+  brm(data = d,
+      family = gaussian(),
+      a ~ 1 + m,
+      prior = c(prior(normal(0, 0.2), class = Intercept),
+                prior(normal(0, 0.5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 5,
+      file = "fits/b05.04b")
+```
+
+```{r}
+p2 <-
+  fitted(b5.4b) |> 
+  data.frame() |> 
+  bind_cols(d) |> 
+  
+  ggplot(aes(x = m, y = a)) +
+  geom_point(size = 2, shape = 1, color = "firebrick4") +
+  geom_segment(aes(xend = m, yend = Estimate),
+               linewidth = 1/4) +
+  geom_line(aes(y = Estimate),
+            color = "firebrick4") +
+  geom_text_repel(data = . %>% filter(Loc %in% c("DC", "HI", "ID")),  
+                  aes(label = Loc), 
+                  size = 3, seed = 5) +
+  labs(x = "Marriage rate (std)",
+       y = "Age at marriage (std)") +
+  coord_cartesian(ylim = range(d$a)) +
+  theme_bw() +
+  theme(panel.grid = element_blank())  
+```
+
+```{r}
+r <-
+  residuals(b5.4b) %>%
+  data.frame() %>% 
+  bind_cols(d)
+
+p4 <-
+  r %>%
+  ggplot(aes(x = Estimate, y = d)) +
+  stat_smooth(method = "lm", fullrange = T,
+              color = "firebrick4", fill = "firebrick4", 
+              alpha = 1/5, linewidth = 1/2) +
+  geom_vline(xintercept = 0, linetype = 2, color = "grey50") +
+  geom_point(size = 2, color = "firebrick4", alpha = 2/3) +
+  geom_text_repel(data = . %>% filter(Loc %in% c("ID", "HI", "DC")),  
+                  aes(label = Loc), 
+                  size = 3, seed = 5) +
+  scale_x_continuous(limits = c(-2, 3)) +
+  coord_cartesian(xlim = range(r$Estimate),
+                  ylim = range(d$d)) +
+  labs(x = "Age at marriage residuals",
+       y = "Divorce rate (std)") +
+  theme_bw() +
+  theme(panel.grid = element_blank())
+
+p4
+```
+
+```{r}
+p1 + p2 + p3 + p4 + plot_annotation(title = "Understanding multiple regression through residuals")
+```
+
+##### 5.1.5.1.1 Rethinking: Residuals are parameters, not data
+```{r}
+r |> glimpse()
+```
+
+```{r}
+r %>%
+  ggplot(aes(x = Estimate, y = d)) +
+  stat_smooth(method = "lm", fullrange = T,
+              color = "firebrick4", fill = "firebrick4", 
+              alpha = 1/5, linewidth = 1/2) +
+  geom_vline(xintercept = 0, linetype = 2, color = "grey50") +
+  # the only change is here
+  geom_pointrange(aes(xmin = Q2.5, xmax = Q97.5),
+                  color = "firebrick4", alpha = 2/3) +
+  geom_text_repel(data = . %>% filter(Loc %in% c("ID", "HI", "DC")),  
+                  aes(label = Loc), 
+                  size = 3, seed = 5) +
+  scale_x_continuous(limits = c(-2, 3)) +
+  coord_cartesian(xlim = range(r$Estimate),
+                  ylim = range(d$d)) +
+  labs(x = "Age at marriage residuals",
+       y = "Divorce rate (std)") +
+  theme_bw() +
+  theme(panel.grid = element_blank())
+```
+
+#### 5.1.5.2 Posterior prediction plots
+```{r}
+fitted(b5.3) %>%
+  data.frame() %>% 
+  #un-standardize the model predictions
+  mutate_all(~. * sd(d$Divorce) + mean(d$Divorce)) |> 
+  bind_cols(d) %>% 
+  
+  ggplot(aes(x = Divorce, y = Estimate)) +
+  geom_abline(linetype = 2, color = "grey50", linewidth = .5) +
+  geom_point(size = 1.5, color = "firebrick4", alpha = 3/4) +
+  geom_linerange(aes(ymin = Q2.5, ymax = Q97.5),
+                 linewidth = 1/4, color = "firebrick4") +
+  geom_text(data = . %>% filter(Loc %in% c("ID", "UT", "RI", "ME")),
+            aes(label = Loc),
+            hjust = 1, nudge_x = - 0.25) +
+  labs(x = "Observed divorce", y = "Predicted divorce") +
+  theme_bw() +
+  theme(panel.grid = element_blank())
+```
+
