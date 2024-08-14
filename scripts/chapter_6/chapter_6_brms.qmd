@@ -1,0 +1,658 @@
+---
+title: "6 The Haunted dag & The Causal Terror"
+format: html
+---
+```{r}
+rm(list = ls())
+```
+
+
+##### 6.0.0.1 Overthinking: Simulated science distortion
+```{r}
+library(tidyverse)
+
+set.seed(1914)
+n <- 200
+p <- 0.1
+
+d <-
+  # uncorrelated newsworthiness and trustworthiness
+  tibble(newsworthiness = rnorm(n, mean = 0, sd = 1),
+         trustworthiness = rnorm(n, mean = 0, sd = 1)) %>% 
+  # total score
+  mutate(total_score = newsworthiness + trustworthiness) %>% 
+  # select top 10% of combined score
+  mutate(selected = ifelse(total_score >= quantile(total_score, 1 - p), TRUE, FALSE))
+
+head(d)
+```
+The correlation among those cases for which ```selected == TRUE```
+```{r}
+d %>% 
+  filter(selected == TRUE) %>% 
+  select(newsworthiness, trustworthiness) %>% 
+  cor()
+```
+
+```{r}
+theme_set(theme_minimal())
+
+text <-
+  tibble(newsworthiness = c(2, 1),
+         trustworthiness = c(2.25, -2.5),
+         selected = c(TRUE, FALSE),
+         label = c("selected", "rejected"))
+
+d %>% 
+  ggplot(aes(x = newsworthiness, y = trustworthiness, color = selected)) +
+  geom_point(aes(shape = selected), alpha = 3/4) +
+  geom_text(data = text,
+            aes(label = label)) +
+  geom_smooth(data = . %>% filter(selected == TRUE),
+              method = "lm", fullrange = T,
+              color = "lightblue", se = F, linewidth = 1/2) +
+  scale_color_manual(values = c("black", "lightblue")) +
+  scale_shape_manual(values = c(1, 19)) +
+  scale_x_continuous(limits = c(-3, 3.9), expand = c(0, 0)) +
+  coord_cartesian(ylim = range(d$trustworthiness)) +
+  theme(legend.position = "none")
+```
+Newsworthiness and trustworthiness are only negatively correlated if we stratify by selected paper
+
+## 6.1 Multicollinearity
+### 6.1.1 Multicollinear legs
+```{r}
+n <- 100
+set.seed(909)
+
+d <-
+  tibble(height = rnorm(n, mean = 10, sd = 2),
+         leg_prop = runif(n, min = 0.4, max = 0.5)) %>% 
+  mutate(leg_left = leg_prop * height + rnorm(n, mean = 0, sd = .02),
+         leg_right = leg_prop * height + rnorm(n, mean = 0, sd = .02))
+```
+
+Left leg and left right are very highly correlated (as expected)
+```{r}
+d %>% 
+  summarize(r = cor(leg_left, leg_right) %>% round(digits = 4))
+```
+
+```{r}
+d %>% 
+  ggplot(aes(x = leg_left, y = leg_right)) +
+  geom_point(alpha = 1/2, color = "forestgreen")
+```
+
+```{r}
+library(brms)
+```
+
+```{r}
+b6.1 <-
+  brm(data = d,
+      family = gaussian,
+      height ~ 1 + leg_left + leg_right,
+      prior = c(prior(normal(10, 100), class = Intercept),
+                prior(normal(2, 10), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 6,
+      file = "fits/b06.01")
+```
+
+```{r}
+print(b6.1)
+```
+The est. error is very big and not looking too good
+
+Coefficient plot
+```{r}
+library(bayesplot)
+
+color_scheme_set("orange")
+
+mcmc_plot(b6.1,
+          type = "intervals",
+          prob = .5,
+          prob_outer = .95,
+          point_est = "mean") +
+  labs(title = "The coefficient plot for the two-leg model",
+       subtitle = "Holy smokes; look at the widths of those betas!") +
+  theme(axis.text.y = element_text(hjust = 0),
+        panel.grid.minor = element_blank(),
+        strip.text = element_text(hjust = 0))
+```
+
+```{r}
+sim_and_fit <- function(seed, n = 100){
+  # set up the parameters
+  n <- n
+  set.seed(seed)
+  
+  # simulate the new data
+  d <- 
+    tibble(height = rnorm(n, mean = 10, sd = 2),
+           leg_prop = runif(n, min = 0.4, max = 0.5)) %>% 
+    mutate(leg_left = leg_prop * height + rnorm(n, mean = 0, sd = .02),
+           leg_right = leg_prop * height + rnorm(n, mean = 0, sd = .02))
+  
+  # update b6.1 to the new data
+  fit <- update(b6.1, newdata = d, seed = 6)
+}
+```
+
+```{r}
+sim <-
+  tibble(seed = 1:4) %>% 
+  mutate(post = map(seed, ~ sim_and_fit(.) %>% 
+                      as_draws_df()))
+```
+
+```{r}
+head(sim)
+```
+
+```{r}
+library(tidybayes)
+
+sim %>% 
+  unnest(post) %>% 
+  pivot_longer(b_Intercept:sigma) %>% 
+  mutate(seed = str_c("seed ", seed)) %>% 
+  
+  ggplot(aes(x = value, y = name)) +
+  stat_pointinterval(.width = .95, color = "forestgreen") +
+  labs(x = "posterior", y = NULL) +
+  theme(axis.text.y = element_text(hjust = 0),
+        panel.border = element_rect(color = "black", fill = "transparent"),
+        panel.grid.minor = element_blank(),
+        strip.text = element_text(hjust = 0)) +
+  facet_wrap(~ seed, ncol = 1)
+```
+
+```{r}
+pairs(b6.1, variable = variables(b6.1)[2:3])
+```
+
+nicer and more focused attempt at drawing pair
+```{r}
+post <- as_draws_df(b6.1)
+
+post %>% 
+  ggplot(aes(x = b_leg_left, y = b_leg_right)) +
+  geom_point(color = "forestgreen", alpha = 1/10, size = 1/2)
+```
+
+Similar plot with the ```mcmc_scatter()```
+```{r}
+color_scheme_set("green")
+
+post %>% 
+  mcmc_scatter(pars = c("b_leg_left", "b_leg_right"),
+               size = 1/2,
+               alpha = 1/10)
+```
+
+```{r}
+post %>% 
+  summarise(rho = cor(b_leg_left, b_leg_right))
+```
+Model that adds two parameters
+```{r}
+post %>% 
+  ggplot(aes(x = b_leg_left + b_leg_right, y = 0)) +
+  stat_halfeye(point_interval = median_qi,
+               fill = "steelblue", .width = .95) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  labs(title = "Sum the multicollinear coefficients",
+       subtitle = "Marked by the median and 95% PIs")
+```
+
+```{r}
+b6.2 <-
+  brm(data = d,
+      family = gaussian,
+      height ~ 1 + leg_left,
+      prior = c(prior(normal(10, 100), class = Intercept),
+                prior(normal(2, 10), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 6,
+      file = "fits/b06.02")
+```
+
+```{r}
+print(b6.2)
+```
+
+Posterior SD for leg_left looks much better. Let's compare this density to the one in Figure 6.2b
+```{r}
+as_draws_df(b6.2) %>% 
+  
+  ggplot(aes(x = b_leg_left, y = 0)) +
+  stat_halfeye(point_interval = median_qi,
+               fill = "steelblue", .width = .95) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  labs(title = "Just one coefficient needed",
+       subtitle = "Marked by the median and 95% PIs",
+       x = "only b_leg_left, this time")
+```
+
+### 6.1.2 Multicollinear milk
+```{r}
+data(milk, package = "rethinking")
+d <- milk
+rm(milk)
+```
+
+```{r}
+d <-
+  d %>% 
+  mutate(k = rethinking::standardize(kcal.per.g),
+         f = rethinking::standardize(perc.fat),
+         l = rethinking::standardize(perc.lactose))
+```
+
+```{r}
+# k regressed on f
+b6.3 <-
+  brm(data = d,
+      family = gaussian,
+      k ~ 1 + f,
+      prior = c(prior(normal(0, 0.2), class = Intercept),
+                prior(normal(0, 0.5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 6,
+      file = "fits/b06.03")
+
+# k regressed on l
+b6.4 <-
+  update(b6.3,
+         newdata = d,
+         formula = k ~ 1 + l,
+         seed = 6,
+         file = "fits/b06.04")
+```
+
+```{r}
+posterior_summary(b6.3)[1:3, ] %>% round(digits = 2)
+```
+
+```{r}
+posterior_summary(b6.4)[1:3, ] %>% round(digits = 2)
+```
+Using both predictors in the same regression model
+```{r}
+b6.5 <-
+  update(b6.4,
+         newdata = d,
+         formula = k ~ 1 + f + l,
+         seed = 6,
+         file = "fits/b06.05")
+```
+
+```{r}
+posterior_summary(b6.5)[1:3, ] %>% round(digits = 2)
+```
+
+```{r}
+d %>% 
+  select(kcal.per.g, perc.fat, perc.lactose) %>% 
+  pairs(col = "forestgreen")
+```
+
+pairs using GGally version
+```{r}
+library(GGally)
+
+# define a couple custom functions
+my_diag <- function(data, mapping, ...){
+  ggplot(data = data, mapping = mapping) +
+    geom_density(fill = "steelblue", color = "black")
+}
+
+my_lower <- function(data, mapping, ...){
+  ggplot(data = data, mapping = mapping) +
+    geom_smooth(method = "lm", color = "orange", se = F) +
+    geom_point(alpha = .8, size = 1/3, color = "blue")
+}
+
+# plug those custom functions into ggpairs()
+ggpairs(data = d, columns = c(3:4, 6),
+        upper = list(continuous = wrap("cor", family = "sans", color = "black")),
+        diag = list(continuous = my_diag),
+        lower = list(continuous = my_lower))
+```
+
+```{r}
+library(ggdag)
+
+dag_coords <-
+  tibble(name = c("L", "D", "F", "K"),
+         x = c(1, 2, 3, 2),
+         y = c(2, 2, 2, 1))
+
+dagify(L ~ D,
+       F ~ D,
+       K ~ L + F,
+       coords = dag_coords) %>% 
+  
+  ggplot(aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_dag_point(aes(color = name == "D"),
+                 alpha = 1/2, size = 6.5, show.legend = F) +
+  geom_point(x = 2, y = 2,
+              size = 6.5, shape = 1, stroke = 1, color = "orange") +
+  geom_dag_text(color = "black") +
+  geom_dag_edges() +
+  scale_color_manual(values = c("steelblue", "orange")) +
+  scale_x_continuous(NULL, breaks = NULL, expand = c(.1, .1)) +
+  scale_y_continuous(NULL, breaks = NULL, expand = c(.1, .1))
+```
+
+#### 6.1.2.2 Overthinking: Simulating collinearity
+```{r}
+# define a custom function
+sim_coll <- function(seed, rho){
+  
+  # simulate the data
+  set.seed(seed)
+  
+  d <-
+    d %>% 
+    mutate(x = rnorm(n(),
+                     mean = perc.fat * rho,
+                     sd = sqrt((1 - rho^2) * var(perc.fat))))
+  
+  # fit an OLS model
+  m <- lm(kcal.per.g ~ perc.fat + x, data = d)
+  
+  # extract the parameter SD
+  sqrt(diag(vcov(m)))[2]
+}
+
+# how many simulations per 'rho'-value would you like?
+n_seed <- 100
+
+# how many 'rho'-values from 0, to .99 would you like to evaluate the process over?
+n_rho <- 30
+
+d <-
+  crossing(seed = 1:n_seed,
+           rho = seq(from = 0, to = .99, length.out = n_rho)) %>% 
+  mutate(parameter_sd = purrr::map2_dbl(seed, rho, sim_coll)) %>% 
+  group_by(rho) %>% 
+  # we'll summarise() our output gby the mean and 95% intervals
+  summarise(mean = mean(parameter_sd),
+            ll = quantile(parameter_sd, prob = .025),
+            ul = quantile(parameter_sd, prob = .975))
+```
+
+```{r}
+d %>% 
+  ggplot(aes(x = rho, y = mean)) +
+  geom_smooth(aes(ymin = ll, ymax = ul),
+              stat = "identity",
+              fill = "orange", color = "orange", alpha = 1/3, linewidth = 2/3) +
+  labs(x = expression(rho),
+       y = "parameter SD") +
+  coord_cartesian(ylim = c(0, .0072))
+```
+
+## 6.2 Post-treatment bias
+```{r}
+# how many plants would you like?
+n <- 100
+
+set.seed(71)
+d <-
+  tibble(h0 = rnorm(n, mean = 10, sd = 2),
+         treatment = rep(0:1, each = n/2),
+         fungus = rbinom(n, size = 1, prob = .5 - treatment * 0.4),
+         h1 = h0 + rnorm(n, mean = 5 - 3 * fungus, sd = 1))
+```
+
+```{r}
+d %>% head()
+```
+
+```{r}
+d %>% 
+  pivot_longer(everything()) %>% 
+  group_by(name) %>% 
+  mean_qi(.width = .89) %>% 
+  mutate_if(is.double, round, digits = 2)
+```
+
+### 6.2.1 A prior is born
+```{r}
+set.seed(6)
+
+# simulate
+sim_p <-
+  tibble(sim_p = rlnorm(1e4, meanlog = 0, sdlog = .25))
+
+# wrangle
+sim_p %>% 
+  mutate("exp(sim_p)" = exp(sim_p)) %>% 
+  gather() %>% 
+  
+  # plot
+  ggplot(aes(x = value)) +
+  geom_density(fill = "steelblue") +
+  scale_x_continuous(breaks = c(0, .5, 1, 1.5, 2, 3, 5)) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  coord_cartesian(xlim = c(0, 6)) +
+  theme(panel.grid.minor.x = element_blank()) +
+  facet_wrap(~ key, scale = "free_y", ncol = 1)
+```
+
+Summarize
+```{r}
+sim_p %>% 
+  mutate("exp(sim_p)" = exp(sim_p)) %>% 
+  pivot_longer(everything()) %>% 
+  group_by(name) %>% 
+  mean_qi(.width = .89) %>% 
+  mutate_if(is.double, round, digits = 2)
+```
+Create a model
+```{r}
+b6.6 <-
+  brm(data = d,
+      family = gaussian,
+      h1 ~ 0 + h0,
+      prior = c(prior(lognormal(0, .25), class = b, lb = 0),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 6,
+      file = "fits/b06.06")
+```
+
+```{r}
+print(b6.6)
+```
+
+Add predictor variable treatment and fungus
+```{r}
+b6.7 <-
+  brm(data = d,
+      family = gaussian,
+      bf(h1 ~ h0 * (a + t * treatment + f * fungus),
+         a + t + f ~ 1,
+         nl = TRUE),
+      prior = c(prior(lognormal(0, .2), nlpar = a, lb = 0),
+                prior(normal(0, .5), nlpar = t),
+                prior(normal(0, .5), nlpar = f),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 6,
+      file = "fits/b06.07")
+```
+
+```{r}
+print(b6.7)
+```
+
+### 6.2.2 Blocked by consequence
+Previous model is wrong because we include fungus which is a post-treatment variable. To measure the treatment effect properly, we should omit fungus from model
+```{r}
+b6.8 <-
+  brm(data = d,
+      family = gaussian,
+      bf(h1 ~ h0 * (a + t * treatment),
+         a + t ~ 1,
+         nl = TRUE),
+      prior = c(prior(lognormal(0, .2), nlpar = a, lb = 0),
+                prior(normal(0, .5), nlpar = t),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 6,
+      file = "fits/b06.08")
+```
+
+```{r}
+print(b6.8)
+```
+
+### 6.2.3 Fungus and d-separation
+```{r}
+# define our coordinages
+dag_coords <-
+  tibble(name = c("H0", "T", "F", "H1"),
+         x = c(1, 5, 4, 3),
+         y = c(2, 2, 1.5, 1))
+
+# save our DAG
+dag <-
+  dagify(F ~ T,
+         H1 ~ H0 + F,
+         coords = dag_coords)
+
+# plot
+dag %>% 
+  ggplot(aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_dag_point(color = "steelblue", alpha = 1/2, size = 6.5) +
+  geom_dag_text(color = "black") +
+  geom_dag_edges() +
+  theme_dag()
+```
+
+```{r}
+gg_simple_dag <- function(d){
+  d %>% 
+    ggplot(aes(x = x, y = y, xend = xend, yend = yend)) +
+    geom_dag_point(color = "steelblue", alpha = 1/2, size = 6.5) +
+    geom_dag_text(color = "black") +
+    geom_dag_edges() +
+    theme_dag()
+}
+
+# try it out
+dag %>% 
+  gg_simple_dag()
+```
+
+```{r}
+library(dagitty)
+
+dag %>% 
+  dseparated("T", "H1")
+```
+
+```{r}
+dag %>% 
+  dseparated("T", "H1", "F")
+```
+
+```{r}
+impliedConditionalIndependencies(dag)
+```
+
+Now consider a DAG of a different kind of causal structure
+```{r}
+# define our coordinates
+dag_coords <-
+  tibble(name = c("H0", "H1", "M", "F", "T"),
+         x = c(1, 2, 2.5, 3, 4),
+         y = c(2, 2, 1, 2, 2))
+
+# save our DAG
+dag <-
+  dagify(F ~ M + T,
+         H1 ~ H0 + M,
+         coords = dag_coords)
+
+# plot
+dag %>% 
+  ggplot(aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_dag_point(aes(color = name == "M"),
+                 alpha = 1/2, size = 6.5, show.legend = F) +
+  geom_point(x = 2.5, y = 1,
+             size = 6.5, shape = 1, stroke = 1, color = "orange") +
+  geom_dag_text(color = "black") +
+  geom_dag_edges() +
+  scale_color_manual(values = c("steelblue", "orange")) +
+  theme_dag()
+```
+
+```{r}
+gg_fancy_dag <- function(d, x = 1, y = 1, circle = "U") {
+  
+  d %>% 
+    ggplot(aes(x = x, y = y, xend = xend, yend = yend)) +
+    geom_dag_point(aes(color = name == circle),
+                   alpha = 1/2, size = 6.5, show.legend = F) +
+    geom_point(x = x, y = y, 
+               size = 6.5, shape = 1, stroke = 1, color = "orange") +
+    geom_dag_text(color = "black") +
+    geom_dag_edges() + 
+    scale_color_manual(values = c("steelblue", "orange")) +
+    theme_dag()
+  
+}
+
+# check it out
+dag %>% 
+  gg_fancy_dag(x = 2.5, y = 1, circle = "M")
+```
+
+Simulate data on the new DAG
+```{r}
+set.seed(71)
+n <- 1000
+
+d2 <-
+  tibble(h0 = rnorm(n, mean = 10, sd = 2),
+         treatment = rep(0:1, each = n/2),
+         m = rbinom(n, size = 1, prob = .5),
+         fungus = rbinom(n, size = 1, prob = .5 - treatment * 0.4 + 0.4 * m),
+         h1 = h0 + rnorm(n, mean = 5 + 3 * m, sd = 1))
+
+head(d2)
+```
+
+Use update() to refit b6.7 and b6.8 to the new data
+```{r}
+b6.7b <-
+  update(b6.7,
+         newdata = d2,
+         seed = 6,
+         file = "fits/b06.07b")
+
+b6.8b <-
+  update(b6.8,
+         newdata = d2,
+         seed = 6,
+         file = "fits/b06.08b")
+```
+
+```{r}
+posterior_summary(b6.7b)[1:3, ] %>% round(digits = 2)
+```
+
+```{r}
+posterior_summary(b6.8b)[1:3, ] %>% round(digits = 2)
+```
+

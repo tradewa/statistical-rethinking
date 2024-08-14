@@ -1,0 +1,166 @@
+---
+title: "Homework Week 2 v2"
+format: html
+---
+
+:::question
+**1.** From the Howell1 dataset, consider only the people younger than 13 years old. Estimate the causal association between age and weight. Assume that age influences weight through two paths. First, age influences height, and height influences weight. Second, age directly influences weight through age- related changes in muscle growth and body proportions.
+Draw the DAG that represents these causal relationships. And then write a generative simulation that takes age as an input and simulates height and weight, obeying the relationships in the DAG.
+:::
+
+Data preparation
+```{r}
+rm(list = ls())
+library(ggdag)
+library(tidyverse)
+library(brms)
+library(tidybayes)
+library(ggthemes)
+library(gganimate)
+```
+
+
+```{r}
+data("Howell1", package = "rethinking")
+d <- Howell1[Howell1$age < 13,]
+rm(Howell1)
+```
+
+Draw the DAG
+```{r}
+dag <-
+  dagify(
+    H ~ A,
+    W ~ H,
+    W ~ A,
+    exposure = c("A", "H"),
+    outcome = "W"
+  )
+
+tidy_dagitty(dag)
+
+ggdag(dag, layout = "circle")
+```
+
+Simulate data
+```{r}
+n <- 100
+sim <- tibble(
+  A =  rnorm(n, mean = 0, sd = 1),
+  H = rnorm(n, mean = A * 2, sd = 1),
+  W = rnorm(n, mean = A + H * 1/4, sd = 1)
+)
+
+
+sim %>% 
+  ggplot(aes(x = A, y = W)) +
+  geom_point(shape = 1, size = 2, color = "navyblue") +
+  theme_bw() +
+  labs(x = "Age", y = "Weight", title = "Influences of Age on Weight")
+```
+:::question
+**2.** Estimate the total causal effect of each year of growth on weight.
+:::
+Mutate data
+```{r}
+d <-
+  d %>% 
+  mutate(
+    A = (age - mean(age)) / sd(age),
+    H = (height - mean(height)) / sd(height),
+    W = (weight - mean(weight)) / sd(weight)
+  )
+```
+
+
+```{r}
+b1 <-
+  brm(data = d,
+      family = gaussian,
+      formula = W ~ 1 + A,
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 5,
+      file = "fits/b1")
+```
+
+```{r}
+draws <- gather_draws(b1, b_Intercept, b_A, sigma)
+
+mean_qi(draws, .width = .89)
+
+ggplot(draws, aes(x = .value, y = .variable)) +
+  stat_halfeye(.width = .89) +
+  labs(x = "Parameter value", y = "Parameter")
+```
+
+:::question
+**3.** Now suppose the causal association between age and weight might be different for boys and girls. Use a single linear regression, with a categorical variable for sex, to estimate the total causal effect of age on weight separately for boys and girls. How do girls and boys differ? Provide one or more posterior contrasts as a summary.
+:::
+Create new column for sex
+```{r}
+d <-
+  d %>% 
+  mutate(
+    S = as.factor(ifelse(male == 0, 1, 2))
+  )
+```
+
+```{r}
+b3 <-
+  brm(data = d,
+      family = gaussian,
+      formula = bf(W ~ 0 + a + b * A,
+                   a ~ 0 + S,
+                   b ~ 0 + S,
+                   nl = TRUE
+      ),
+      prior = c(prior(normal(0, .2), class = b, coef = S1, nlpar = a),
+                prior(normal(0, .2), class = b, coef = S2, nlpar = a),
+                prior(normal(0, .5), class = b, coef = S1, nlpar = b),
+                prior(normal(0, .5), class = b, coef = S2, nlpar = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 5,
+      file = "fits/b3")
+```
+
+```{r}
+draws <- gather_draws(b3, b_a_S1, b_a_S2, b_b_S1, b_b_S2, sigma)
+
+mean_qi(draws, .width = 0.89)
+
+ggplot(draws, aes(x = .value, y = .variable)) +
+  stat_halfeye(.width = 0.89) +
+  labs(x = "Parameter value", y = "Parameter")
+```
+
+```{r}
+new_age <- expand_grid(A = 0:12, S = factor(c(1, 2)))
+
+all_lines <- new_age %>% 
+  add_epred_draws(b3) %>% 
+  ungroup() %>% 
+  mutate(group = paste0(S, "_", .draw))
+
+plot_lines <- all_lines %>%
+  filter(.draw %in% sample(unique(.data$.draw), size = 1000)) %>% 
+  select(-.draw)
+
+animate_lines <- all_lines %>%
+  filter(.draw %in% sample(unique(.data$.draw), size = 50))
+
+ggplot(animate_lines, aes(x = A, y = .epred, color = S, group = group)) +
+  geom_line(data = plot_lines, alpha = 0.01, show.legend = FALSE) + 
+  geom_point(data = d, aes(x = A, y = W, color = S),
+             inherit.aes = FALSE) +
+  geom_line(alpha = 1, show.legend = FALSE, color = "black") +
+  scale_color_colorblind(labels = c("Girls", "Boys")) +
+  scale_x_continuous(breaks = seq(0, 12, 2)) +
+  labs(x = "Age", y = "Weight (kg)", color = NULL) +
+  guides(color = guide_legend(override.aes = list(size = 3))) +
+  transition_states(.draw, 0, 1)
+```
+
