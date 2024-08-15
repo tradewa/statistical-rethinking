@@ -656,3 +656,274 @@ posterior_summary(b6.7b)[1:3, ] %>% round(digits = 2)
 posterior_summary(b6.8b)[1:3, ] %>% round(digits = 2)
 ```
 
+# 6.3 Collider bias
+```{r}
+dag_coords <-
+  tibble(name = c("T", "S", "N"),
+         x = 1:3,
+         y = 1)
+
+dagify(S ~ T + N,
+       coords = dag_coords) %>% 
+  gg_simple_dag()
+```
+
+### 6.3.1 Collider of false sorrow
+```{r}
+dagify(M ~ H + A,
+       coords = dag_coords %>% 
+         mutate(name = c("H", "M", "A"))) %>% 
+  gg_simple_dag()
+```
+
+```{r}
+new_borns <- function(n = 20){
+  tibble(a = 1,
+         m = 0,
+         h = seq(from = -2, to = 2, length.out = n))
+}
+```
+
+```{r}
+new_borns()
+```
+
+Make a function to update population
+```{r}
+update_population <- function(pop, n_births = 20, aom = 18, max_age = 65){
+  pop %>% 
+    mutate(a = a + 1, # everyone gets one year older
+           # some people get marrid
+           m = ifelse(m >= 1, 1, (a >= aom) * rbinom(n(), 1, rethinking::inv_logit(h - 4)))
+           ) %>% 
+    filter(a <= max_age) %>%  # old people die
+    bind_rows(new_borns(n_births))
+}
+```
+
+```{r}
+new_borns() %>% 
+  update_population()
+```
+
+Run the population simulation for 1000 years
+```{r}
+# this was McElreath's seed
+set.seed(1977)
+
+# year 1
+d <- new_borns(n = 20)
+
+# years 2 through 1000
+for(i in 2:1000){
+  d <- update_population(d, n_births = 20, aom = 18, max_age = 65)
+}
+
+# now rename()
+d <-
+  d %>% 
+  rename(age = a, married = m, happiness = h)
+
+# take a look
+glimpse(d)
+```
+
+Summarize the variables
+```{r}
+d %>% 
+  pivot_longer(everything()) %>% 
+  group_by(name) %>% 
+  mean_qi(value) %>% 
+  mutate_if(is.double, round, digits = 2)
+```
+
+```{r}
+d %>% 
+  mutate(married = factor(married, labels = c("unmarried", "married"))) %>% 
+  
+  ggplot(aes(x = age, y = happiness, color = married)) +
+  geom_point(size = 1.75) +
+  scale_color_manual(NULL, values = c("grey85", "forestgreen")) +
+  scale_x_continuous(expand = c(.015, .015)) +
+  theme(panel.grid = element_blank())
+```
+
+Here's the likelihood for the simple Gaussian multivariable model predicting happiness
+$$
+\begin{align}
+happiness_{i} &\sim Normal(\mu_{i}, \sigma) \\
+\mu_{i} &= \alpha_{married[i]} + \beta_{1} age_{i},
+\end{align}
+$$
+
+```{r}
+d2 <-
+  d %>% 
+  filter(age > 17) %>% 
+  mutate(a = (age - 18) / (65 - 18))
+
+head(d2)
+```
+
+```{r}
+d2 <-
+  d2 %>% 
+  mutate(mid = factor(married + 1, labels = c("single", "married")))
+
+head(d2)
+```
+
+Fit the model
+```{r}
+b6.9 <-
+  brm(data = d2,
+      family = gaussian,
+      happiness ~ 0 + mid + a,
+      prior = c(prior(normal(0, 1), class = b, coef = midmarried),
+                prior(normal(0, 1), class = b, coef = midsingle),
+                prior(normal(0, 2), class = b, coef = a),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 6,
+      file = "fits/b06.09")
+```
+
+```{r}
+print(b6.9)
+```
+
+Now drop marriage status
+```{r}
+b6.10 <-
+  brm(data = d2,
+      family = gaussian,
+      happiness ~ 0 + Intercept + a,
+      prior = c(prior(normal(0, 1), class = b, coef = Intercept),
+                prior(normal(0, 2), class = b, coef = a),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 6,
+      file = "fits/b06.10")
+```
+
+```{r}
+print(b6.10)
+```
+
+### 6.3.2 The haunted DAG
+```{r}
+dag_coords <-
+  tibble(name = c("G", "P", "C"),
+         x = c(1, 2, 2),
+         y = c(2, 2, 1))
+
+dagify(P ~ G,
+       C ~ P + G,
+       coords = dag_coords) %>% 
+  gg_simple_dag()
+```
+
+Now we add the haunting variable, U
+```{r}
+dag_coords <-
+  tibble(name = c("G", "P", "C", "U"),
+         x = c(1, 2, 2, 2.5),
+         y = c(2, 2, 1, 1.5))
+
+dagify(P ~ G + U,
+       C ~ P + G + U,
+       coords = dag_coords) %>% 
+  gg_fancy_dag(x = 2.5, y = 1.5, circle = "U")
+```
+
+Let's simulate some data
+```{r}
+# how many grandparent-parent-child triads would you like?
+n <- 200
+
+b_gp <- 1 # direct effect of G on P
+b_gc <- 0 # direct effect of G on C
+b_pc <- 1 # direct effect of P on C
+b_u <- 2 # direct effect of U on P and C
+
+# simulate triads
+set.seed(1)
+d <-
+  tibble(u = 2 * rbinom(n, size = 1, prob = .5) - 1,
+         g = rnorm(n, mean = 0, sd = 1)) %>% 
+  mutate(p = rnorm(n, mean = b_gp * g + b_u * u, sd = 1)) %>% 
+  mutate(c = rnorm(n, mean = b_pc * p + b_gc * g + b_u * u, sd = 1))
+
+head(d)
+```
+
+Fit the model without u
+```{r}
+b6.11 <-
+  brm(data = d,
+      family = gaussian,
+      c ~ 0 + Intercept + p + g,
+      prior = c(prior(normal(0, 1), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 6,
+      file = "fits/b06.11")
+```
+
+```{r}
+print(b6.11)
+```
+
+```{r}
+d %>% 
+  mutate(centile = ifelse(p >= quantile(p, prob = .45) & p <= quantile(p, prob = .60), "a", "b"),
+         u = factor(u)) %>% 
+  
+  ggplot(aes(x = g, y = c)) +
+  geom_point(aes(shape = centile, color = u),
+             size = 2.5, stroke = 1/4) +
+  stat_smooth(data = . %>% filter(centile == "a"),
+              method = "lm", se = F, linewidth = 1/2, color = "black", fullrange = T) +
+  scale_shape_manual(values = c(19, 1)) +
+  scale_color_manual(values = c("black", "lightblue")) +
+  theme(legend.position = "none")
+```
+
+Now fit the model including u
+```{r}
+b6.12 <-
+  update(b6.11,
+         newdata = d,
+         formula = c ~ 0 + Intercept + p + g + u,
+         seed = 6,
+         file = "fits/b06.12")
+```
+
+```{r}
+print(b6.12)
+```
+
+## 6.4 Confronting confounding
+```{r}
+dag_coords <-
+  tibble(name = c("E", "U", "W"),
+         x = c(1, 2, 3),
+         y = c(1, 2, 1))
+
+dagify(E ~ U,
+       W ~ E + U,
+       coords = dag_coords) %>% 
+  gg_simple_dag()
+```
+
+```{r}
+dagify( W ~ E + U,
+        coords = dag_coords) %>% 
+  gg_simple_dag()
+```
+
+### 6.4.1 Shutting the backdoor
+```{r}
+
+```
+
