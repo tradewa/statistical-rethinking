@@ -1,0 +1,81 @@
+---
+title: "Homework Week 3"
+format: html
+---
+
+```{r}
+rm(list = ls())
+library(tidyverse)
+library(brms)
+```
+
+```{r}
+data(foxes, package = "rethinking")
+d <- foxes
+rm(foxes)
+```
+
+```{r}
+d <-
+  d %>% 
+  mutate(
+    a = rethinking::standardize(area),
+    f = rethinking::standardize(avgfood),
+    g = rethinking::standardize(groupsize),
+    w = rethinking::standardize(weight)
+  )
+```
+
+1. Create a model to see the influences of Area to Food
+```{r}
+b1 <-
+  brm(data = d,
+      family = gaussian,
+      f ~ 1 + a,
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 6,
+      file = "fits/b1")
+```
+
+```{r}
+print(b1)
+```
+
+2. Infer the total causal efect of adding food F to a territory on the weight of foxes
+```{r}
+b2 <-
+  brm(data = d,
+      family = gaussian,
+      w ~ 1 + f,
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 6,
+      file = "fits/b2")
+```
+
+```{r}
+print(b2)
+```
+
+3. Infer the direct causal effect of adding food to a territory on the weight of foxes
+```{r}
+b3 <-
+  brm(data = d,
+      family = gaussian,
+      w ~ 1 + f + g,
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 6,
+      file = "fits/b3")
+```
+
+```{r}
+print(b3)
+```
