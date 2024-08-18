@@ -1,5 +1,7 @@
 # Other files
 .DS_Store
+.rds
+
 chapter_2_files/
 chapter_2_brms_files/
 chapter_2_exercises_files/
