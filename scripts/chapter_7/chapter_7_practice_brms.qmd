@@ -1,0 +1,612 @@
+---
+title: "Chapter 7 Practice"
+format: html
+---
+
+```{r}
+rm(list = ls())
+library(tidyverse)
+library(purrr)
+library(brms)
+library(tidybayes)
+
+theme_set(theme_grey())
+```
+
+**7E1.** State the three motivating criteria that define information
+entropy. Try to express each in your own words.
+
+1.  The measure of uncertainty must be continuous. Otherwise, small
+    change in probability would result in a big change in uncertainty
+2.  The measure of uncertainty should increase as the number of possible
+    events increase. For example in a city possible events are rain and
+    shine, in a second city possible events are rain, shine, and snow.
+    The uncertainty should be bigger in the second city.
+3.  The measure of uncertainty should be additive. e.g. If we measure
+    the uncertainty about rain or shine (2 possible events) and then the
+    uncertainty about hot or cold (2 different possible events), the
+    uncertainty over the four combinations of those events - rain/hot,
+    rain/cold, shine/cold, shine/hot-should be the sum of the separate
+    uncertainties
+
+**7E2.** Suppose a coin is weighted such that, when it is tossed and
+lands on a table, it comes up heads 70% of the time. What is the entropy
+of this coin?
+
+```{r}
+p_logp <- function(p){
+  if (p == 0) return(0)
+  p * log(p)
+}
+
+calc_entropy <- function(x){
+  avg_logprob <- sum(map_dbl(x, p_logp))
+  -1 * avg_logprob
+}
+```
+
+```{r}
+probs <- c(.7, .3)
+calc_entropy(probs)
+```
+
+**7E3.** Suppose a four-sided die is loaded such that, when tossed onto
+a table, it shows “1” 20%, “2” 25%, “3” 25%, and “4” 30% of the time.
+What is the entropy of this die?
+
+```{r}
+probs <- c(.2, .25, .25, .3)
+calc_entropy(probs)
+```
+
+**7E4.** Suppose another four-sided die is loaded such that it never
+shows “4”. The other three sides show equally often. What is the entropy
+of this die?
+
+```{r}
+probs <- c(1/3, 1/3, 1/3, 0)
+calc_entropy(probs)
+```
+
+**7M1.** Write down and compare the definitions of AIC and WAIC. Which
+of these criteria is most general? Which assumptions are required to
+transform the more general criterion into a less general one?
+
+AIC 
+$$
+AIC = -2lppd + 2p
+$$
+
+WAIC 
+$$
+WAIC(y, \Theta) = -2(lppd - \sum_{i}var_{\theta}\ logp(y_{i}|\theta))
+$$ 
+WAIC is more general than the AIC, as the AIC assumes that priors are
+flat or overwhelmed by the likelihood, the posterior distribution is
+approximately multivariate Gaussian, and the sample size is much
+greather than the number of parameters. If all of these assumptions are
+met, then we would expect the AIC and WAIC to be about the same
+
+**7M2.** Explain the difference between model selection and model
+comparison. What information is lost under model selection?
+
+Model selection selects the "best" model according to the criterion
+value and discards other models. By using model seleciton we lose
+information about the relative model accuracy.
+
+Model comparison uses multiple models to understand how the variable
+included influence prediction and affect conditional independencies in a
+causal model. Thus, we preserve information and can make more holistic
+judgments about our data and models.
+
+**7M3.** When comparing models with an information criterion, why must
+all models be fit to exactly the same observations? What would happen to
+the information criterion values, if the models were fit to different
+numbers of observations? Perform some experiments, if you are not sure.
+
+As information criterion depends on sample siz,the more observations,
+the larger the value, to compare two model fairly we need to use the
+same number of observations
+
+**7M4.** What happens to the effective number of parameters, as measured
+by PSIS or WAIC, as a prior becomes more concentrated? Why? Perform some
+experiments, if you are not sure.
+
+The penalty term of the WAIC, $p_{WAIC}$ is defined as 
+$$
+\text{WAIC}(y, \Theta) = -2(\text{lppd} - \sum_{i}var_{\theta}\ \text{log}\ p(y_{i}|\theta))
+$$
+
+Smaller variances in log probabilities will results in a lower penalty.
+If we restricts the prior to become more concentrated, we restrict the
+plausible range of the parameters and the penalty term becomes smaller
+
+**7H1.** In 2007, The Wall Street Journal published an editorial (“We’re
+Number One, Alas”) with a graph of corportate tax rates in 29 countries
+plotted against tax revenue. A badly fit curve was drawn in
+(reconstructed at right), seemingly by hand, to make the argument that
+the relationship between tax rate and tax revenue increases and then
+declines, such that higher tax rates can actually produce less tax
+revenue. I want you to actually fit a curve to these data, found in
+data(Laffer). Consider models that use tax rate to predict tax revenue.
+Compare, using WAIC or PSIS, a straight-line model to any curved models
+you like. What do you conclude about the relationship between tax rate
+and tax revenue.
+
+```{r}
+data(Laffer, package = "rethinking")
+
+d <- Laffer
+```
+
+```{r}
+d %>% 
+  ggplot(aes(x = tax_rate, y = tax_revenue)) +
+  geom_point(shape = 1, size = 2, color = "navyblue") +
+  theme_bw()
+```
+
+We will fit straight, quadratic, and spline model
+
+```{r}
+d <-
+  d %>% 
+  mutate(across(everything(), rethinking::standardize),
+         tax_rate2 = tax_rate ^ 2)
+```
+
+```{r}
+laf_line <-
+  brm(data = d,
+      family = gaussian,
+      formula = tax_revenue ~ 1 + tax_rate,
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 3, cores = 4,
+      seed = 1234,
+      file = "fits/b7h1-line.rds")
+
+laf_quad <-
+  brm(data = d,
+      family = gaussian,
+      formula = tax_revenue ~ 1 + tax_rate + tax_rate2,
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 3, cores = 4,
+      seed = 1234,
+      file = "fits/b7h1-quad.rds")
+
+laf_spln <-
+  brm(data = d,
+      family = gaussian,
+      formula = tax_revenue ~ 1 + s(tax_rate, bs = "bs"),
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
+                prior(normal(0, .5), class = sds),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 3, cores = 4,
+      seed = 1234,
+      file = "fits/b7h1-spln.rds")
+```
+
+```{r}
+tr_seq <- 
+  tibble(tax_rate = seq(0, 40, length.out = 100)) %>% 
+  mutate(tax_rate = (tax_rate - mean(Laffer$tax_rate)) / sd(Laffer$tax_rate),
+         tax_rate2 = tax_rate ^ 2)
+
+predictions <- bind_rows(
+  predicted_draws(laf_line, newdata = tr_seq) %>% 
+    median_qi(.width = 0.89) %>% 
+    mutate(type = "Linear"),
+  
+  predicted_draws(laf_quad, newdata = tr_seq) %>% 
+    median_qi(.width = 0.89) %>% 
+    mutate(type = "Quadratic"),
+  
+  predicted_draws(laf_spln, newdata = tr_seq) %>% 
+    median_qi(.width = 0.89) %>% 
+    mutate(type = "Spline")
+)
+
+fits <- bind_rows(
+  epred_draws(laf_line, newdata = tr_seq) %>% 
+    median_qi(.width = c(.67, .89, .97)) %>% 
+    mutate(type = "Linear"),
+  
+  epred_draws(laf_quad, newdata = tr_seq) %>% 
+    median_qi(.width = c(.67, .89, .97)) %>% 
+    mutate(type = "Quadratic"),
+  
+  epred_draws(laf_spln, newdata = tr_seq) %>% 
+    median_qi(.width = c(.67, .89, .97)) %>% 
+    mutate(type = "Spline")
+)
+
+ggplot() +
+  facet_wrap(~type, nrow = 1) +
+  geom_ribbon(data = predictions,
+              aes(x = tax_rate, ymin = .lower, ymax = .upper),
+              alpha = .2) +
+  geom_lineribbon(data = fits,
+                  aes(x = tax_rate, y = .epred, ymin = .lower, ymax = .upper),
+                  size = .6) +
+  geom_point(data = d, aes(x = tax_rate, y = tax_revenue),
+             alpha = .5) +
+  #scale_fill_manual(values = ramp_blue(seq(.9, .1, length.out = 3)), breaks = c(.67, .89, .97) +
+  labs(x = "Standardized Tax Rate", y = "Standardized Tax Revenue", fill = "Interval")
+  
+```
+
+```{r}
+library(loo)
+
+laf_line <- add_criterion(laf_line, criterion = c("loo", "waic"))
+laf_quad <- add_criterion(laf_quad, criterion = c("loo", "waic"))
+laf_spln <- add_criterion(laf_spln, criterion = c("loo", "waic"))
+
+loo_compare(laf_line, laf_quad, laf_spln, criterion = "waic")
+
+loo_compare(laf_line, laf_quad, laf_spln, criterion = "loo")
+
+```
+
+**7H2.** In the Laffer data, there is one country with a high tax
+revenue that is an outlier. Use PSIS and WAIC to measure the importance
+of this outlier in the models you fit in the previous problem. Then use
+robust regression with a Student’s t distribution to revist the curve
+fitting problem. How much does a curved relationship depend upon the
+outlier point.
+
+```{r}
+library(gghighlight)
+
+criteria_influence <- function(mod) {
+  tibble(pareto_k = mod$criteria$loo$diagnostics$pareto_k,
+         p_waic = mod$criteria$waic$pointwise[, "p_waic"]) %>%
+    rowid_to_column(var = "obs")
+}
+
+influ <- bind_rows(
+  criteria_influence(laf_line) %>%
+    mutate(type = "Linear"),
+  criteria_influence(laf_quad) %>%
+    mutate(type = "Quadratic"),
+  criteria_influence(laf_spln) %>%
+    mutate(type = "Spline")
+)
+
+ggplot(influ, aes(x = pareto_k, y = p_waic)) +
+  facet_wrap(~type, nrow = 1) +
+  geom_vline(xintercept = 0.7, linetype = "dashed") +
+  geom_hline(yintercept = 0.4, linetype = "dashed") +
+  geom_point() +
+  gghighlight(pareto_k > 0.7 | p_waic > 0.4, n = 1, label_key = obs,
+              label_params = list(size = 3)) +
+  labs(x = "Pareto *k*", y = "p<sub>WAIC</sub>")
+```
+
+```{r}
+laf_line2 <- brm(
+  bf(tax_revenue ~ 1 + tax_rate, nu = 1),
+  data = d, family = student,
+  prior = c(prior(normal(0, 0.2), class = Intercept),
+            prior(normal(0, 0.5), class = b),
+            prior(exponential(1), class = sigma)),
+  iter = 4000, warmup = 2000, chains = 4, cores = 4, seed = 1234,
+  file = "fits/b7h2-line.rds")
+
+laf_quad2 <- 
+  brm(
+    bf(tax_revenue ~ 1 + tax_rate + tax_rate2, nu = 1),
+    data = d, family = student,
+    prior = c(prior(normal(0, 0.2), class = Intercept),
+              prior(normal(0, 0.5), class = b),
+              prior(exponential(1), class = sigma)),
+    iter = 4000, warmup = 2000, chains = 4, cores = 4, seed = 1234,
+    file = "fits/b7h2-quad.rds")
+
+laf_spln2 <- brm(
+  bf(tax_revenue ~ 1 + s(tax_rate, bs = "bs"), nu = 1),
+  data = d, family = student,
+  prior = c(prior(normal(0, 0.2), class = Intercept),
+            prior(normal(0, 0.5), class = b),
+            prior(normal(0, 0.5), class = sds),
+            prior(exponential(1), class = sigma)),
+  iter = 4000, warmup = 2000, chains = 4, cores = 4, seed = 1234,
+  control = list(adapt_delta = 0.99),
+  file = "fits/bh72-spln.rds")
+```
+
+```{r}
+predictions <- bind_rows(
+  predicted_draws(laf_line2, newdata = tr_seq) %>%
+    median_qi(.width = 0.89) %>%
+    mutate(type = "Linear"),
+  predicted_draws(laf_quad2, newdata = tr_seq) %>%
+    median_qi(.width = 0.89) %>%
+    mutate(type = "Quadratic"),
+  predicted_draws(laf_spln2, newdata = tr_seq) %>%
+    median_qi(.width = 0.89) %>%
+    mutate(type = "Spline")
+)
+
+fits <- bind_rows(
+  epred_draws(laf_line2, newdata = tr_seq) %>%
+    median_qi(.width = c(0.67, 0.89, 0.97)) %>%
+    mutate(type = "Linear"),
+  epred_draws(laf_quad2, newdata = tr_seq) %>%
+    median_qi(.width = c(0.67, 0.89, 0.97)) %>%
+    mutate(type = "Quadratic"),
+  epred_draws(laf_spln2, newdata = tr_seq) %>%
+    median_qi(.width = c(0.67, 0.89, 0.97)) %>%
+    mutate(type = "Spline")
+)
+
+ggplot() +
+  facet_wrap(~type, nrow = 1) +
+  geom_ribbon(data = predictions,
+              aes(x = tax_rate, ymin = .lower, ymax = .upper),
+              alpha = 0.2) +
+  geom_lineribbon(data = fits,
+                  aes(x = tax_rate, y = .epred, ymin = .lower, ymax = .upper),
+                  size = 0.6) +
+  geom_point(data = d, aes(x = tax_rate, y = tax_revenue),
+             alpha = 0.5) +
+  #scale_fill_manual(values = ramp_blue(seq(0.9, 0.1, length.out = 3)), breaks = c(0.67, 0.89, 0.97)) +
+  labs(x = "Standardized Tax Rate", y = "Standardized Tax Revenue",
+       fill = "Interval")
+```
+
+```{r}
+laf_line2 <- add_criterion(laf_line2, criterion = c("loo", "waic"))
+laf_quad2 <- add_criterion(laf_quad2, criterion = c("loo", "waic"))
+laf_spln2 <- add_criterion(laf_spln2, criterion = c("loo", "waic"))
+
+loo_compare(laf_line2, laf_quad2, laf_spln2, criterion = "waic")
+
+loo_compare(laf_line2, laf_quad2, laf_spln2, criterion = "loo")
+
+```
+
+7H3. Consider three fictional Polynesian islands. On each there is a
+Royal Ornithologist charged by the king with surveying the bird
+population. They have each found the following proportions of 5
+important bird species:
+
+|          | Species A | Species B | Species C | Species D | Species E |
+|----------|-----------|-----------|-----------|-----------|-----------|
+| Island 1 | 0.200     | 0.200     | 0.200     | 0.200     | 0.200     |
+| Island 2 | 0.800     | 0.100     | 0.050     | 0.025     | 0.025     |
+| Island 3 | 0.050     | 0.150     | 0.700     | 0.050     | 0.050     |
+
+Notice that each row sums to 1, all the birds. This problem has two parts. It is not computationally complicated. But it is conceptually tricky. First, compute the entropy of each island’s bird distribution. Interpret these entropy values. Second, use each island’s bird distribution to predict the other two. This means to compute the KL divergence of each island from the others, treating each island as if it were a statistical model of the other islands. You should end up with 6 different KL divergence values. Which island predicts the others best? Why?
+```{r}
+islands <-
+  tibble(
+    island = paste("Island", 1:3),
+    a = c(.2, .8, .05),
+    b = c(.2, .1, .15),
+    c = c(.2, .05, .7),
+    d = c(.2, .025, .05),
+    e = c(.2, .025, .05),
+    ) %>% 
+  pivot_longer(-island, names_to = "species", values_to = "prop")
+
+islands %>% 
+  group_by(island) %>% 
+  summarize(prop = list(prop), .groups = "drop") %>% 
+  mutate(entropy = map_dbl(prop, calc_entropy))
+```
+
+```{r}
+d_kl <- function(p, q){
+  sum(p * (log(p) - log(q)))
+}
+```
+
+```{r}
+crossing(model = paste("Island", 1:3),
+         predicts = paste("Island", 1:3)) %>%
+  filter(model != predicts) %>%
+  left_join(islands, by = c("model" = "island")) %>%
+  rename(model_prop = prop) %>%
+  left_join(islands, by = c("predicts" = "island", "species")) %>%
+  rename(predict_prop = prop) %>%
+  group_by(model, predicts) %>%
+  summarize(q = list(model_prop),
+            p = list(predict_prop),
+            .groups = "drop") %>%
+  mutate(kl_distance = map2_dbl(p, q, d_kl))
+```
+**7H4.** Recall the marriage, age, and happiness collider bias example from Chapter 6. Run models m6.9 and m6.10 again (page 178). Compare these two models using WAIC (or PSIS, they will produce identical results). Which model is expected to make better predictions? Which model provides the correct causal inference about the influence of age on happiness? Can you explain why the answers to these two questions disagree?
+```{r}
+library(dagitty)
+library(ggdag)
+
+hma_dag <- dagitty("dag{H -> M <- A}")
+coordinates(hma_dag) <- list(x = c(H = 1, M = 2, A = 3),
+                             y = c(H = 1, M = 1, A = 1))
+
+ggplot(hma_dag, aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_dag_text(color = "black", size = 10) +
+  geom_dag_edges(edge_color = "black", edge_width = 2,
+                 arrow_directed = grid::arrow(length = grid::unit(15, "pt"),
+                                              type = "closed")) +
+  theme_void()
+```
+
+```{r}
+d <- rethinking::sim_happiness(seed = 1977, N_years = 1000)
+
+dat <-
+  d %>% 
+  filter(age > 17) %>% 
+  mutate(a = (age - 18) / (65 - 18),
+         mid = factor(married + 1, labels = c("single", "married")))
+
+b6.9 <-
+  brm(happiness ~ 0 + mid + a,
+      data  = dat,
+      family = gaussian,
+      prior = c(prior(normal(0, 1), class = b, coef = midmarried),
+                prior(normal(0, 1), class = b, coef = midsingle),
+                prior(normal(0, 2), class = b, coef = a),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b7h4-6.9")
+
+b6.10 <-
+  brm(happiness ~ 1 + a,
+      data  = dat,
+      family = gaussian,
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 2), class = b, coef = a),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b7h4-6.10")
+```
+To compare the model we use PSIS
+```{r}
+b6.9 <- add_criterion(b6.9, criterion = "loo")
+b6.10 <- add_criterion(b6.10, criterion = "loo")
+
+loo_compare(b6.9, b6.10)
+```
+PSIS shows a strong preference for b6.9, which is the model that includes both age and marriage status. Howeevr, b6.10 provides the correct causal inference, as no additional conditioning is needed
+```{r}
+adjustmentSets(hma_dag, exposure = "A", outcome = "H")
+```
+
+The reason is that in this model, marital status is a collider. Adding this variable to the model add a real statistical association between happiness and age, which improves the predictions that are made. However, the association is not causal, so intervening on age (if that were possible), would not actually change happiness. Therefore it’s important to consider the causal implications of your model before selecting one based on PSIS or WAIC alone.
+
+**7H5.** Revisit the urban fox data, data(foxes), from the previous chapter’s practice problems. Use WAIC or PSIS based model comparison on five different models, each using weight as the outcome, and containing these sets of predictor variables:
+1. ```avgfood + groupsize + area```
+2. ```avgfood + groupsize```
+3. ```groupsize + area```
+4. ```avgfood```
+5. ```area```
+Can you explain the relative differences in WAIC scores, using the fox DAG from the previous chapter? Be sure to pay attention to the standard error of the score differences (dSE).
+
+```{r}
+data(foxes, package = "rethinking")
+
+fox_dat <- 
+  foxes %>% 
+  as_tibble() %>% 
+  select(area, avgfood, weight, groupsize) %>% 
+  mutate(across(everything(), rethinking::standardize))
+```
+
+```{r}
+b7h5_1 <-
+  brm(
+    weight ~ 1 + avgfood + groupsize + area,
+    data = fox_dat,
+    family = gaussian,
+    prior = c(prior(normal(0, .2), class = Intercept),
+              prior(normal(0, .5), class = b),
+              prior(exponential(1), class = sigma)),
+    iter = 4000, warmup = 2000, chains = 4, cores = 4,
+    seed = 1234,
+    file = "fits/b7h5_1"
+    )
+
+b7h5_2 <-
+  brm(
+    weight ~ 1 + avgfood + groupsize,
+    data = fox_dat,
+    family = gaussian,
+    prior = c(prior(normal(0, .2), class = Intercept),
+              prior(normal(0, .5), class = b),
+              prior(exponential(1), class = sigma)),
+    iter = 4000, warmup = 2000, chains = 4, cores = 4,
+    seed = 1234,
+    file = "fits/b7h5_2"
+    )
+
+b7h5_3 <-
+  brm(
+    weight ~ 1 + groupsize + area,
+    data = fox_dat,
+    family = gaussian,
+    prior = c(prior(normal(0, .2), class = Intercept),
+              prior(normal(0, .5), class = b),
+              prior(exponential(1), class = sigma)),
+    iter = 4000, warmup = 2000, chains = 4, cores = 4,
+    seed = 1234,
+    file = "fits/b7h5_3"
+    )
+
+b7h5_4 <-
+  brm(
+    weight ~ 1 + avgfood,
+    data = fox_dat,
+    family = gaussian,
+    prior = c(prior(normal(0, .2), class = Intercept),
+              prior(normal(0, .5), class = b),
+              prior(exponential(1), class = sigma)),
+    iter = 4000, warmup = 2000, chains = 4, cores = 4,
+    seed = 1234,
+    file = "fits/b7h5_4"
+    )
+
+b7h5_5 <-
+  brm(
+    weight ~ 1 + area,
+    data = fox_dat,
+    family = gaussian,
+    prior = c(prior(normal(0, .2), class = Intercept),
+              prior(normal(0, .5), class = b),
+              prior(exponential(1), class = sigma)),
+    iter = 4000, warmup = 2000, chains = 4, cores = 4,
+    seed = 1234,
+    file = "fits/b7h5_5"
+    )
+```
+
+```{r}
+b7h5_1 <- add_criterion(b7h5_1, criterion = "waic")
+b7h5_2 <- add_criterion(b7h5_2, criterion = "waic")
+b7h5_3 <- add_criterion(b7h5_3, criterion = "waic")
+b7h5_4 <- add_criterion(b7h5_4, criterion = "waic")
+b7h5_5 <- add_criterion(b7h5_5, criterion = "waic")
+
+comp <- loo_compare(b7h5_1, b7h5_2, b7h5_3, b7h5_4, b7h5_5, criterion = "waic")
+
+comp
+```
+
+```{r}
+plot_comp <- comp %>% 
+  as_tibble(rownames = "model") %>% 
+  mutate(across(-model, as.numeric),
+         model = fct_inorder(model))
+
+waic_val <- plot_comp %>% 
+  select(model, waic, se = se_waic) %>% 
+  mutate(lb = waic - se,
+         ub = waic + se)
+
+diff_val <-
+  plot_comp %>% 
+  select(model, waic, se = se_diff) %>% 
+  mutate(se = se * 2) %>% 
+  mutate(lb = waic - se,
+         ub = waic + se) %>% 
+  filter(se != 0)
+
+ggplot() +
+  geom_pointrange(data = waic_val, 
+                  mapping = aes(x = waic, xmin = lb, xmax = ub, y = fct_rev(model))) +
+  geom_pointrange(data = diff_val, 
+                  mapping = aes(x = waic, xmin = lb, xmax = ub, y = fct_rev(model)),
+                  position = position_nudge(y = .2), shape = 2,
+                  color = "#009FB7") +
+  labs(x = "Deviance", y = NULL)
+```
+
