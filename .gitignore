@@ -1,5 +1,6 @@
 # Other files
 .DS_Store
+*.rds
 
 chapter_2/fits/
 chapter_2_files/
