@@ -1,32 +1,37 @@
 # Other files
 .DS_Store
-*.rds
 
+chapter_2/fits/
 chapter_2_files/
 chapter_2_brms_files/
 chapter_2_exercises_files/
 chapter_2_exercises_brms_files/
 
+chapter_3/fits/
 chapter_3_files/
 chapter_3_brms_files/
 chapter_3_practice_files/
 chapter_3_practice_brms_files/
 
+chapter_4/fits/
 chapter_4_files/
 chapter_4_brms_files/
 chapter_4_practice_files/
 chapter_4_practice_brms_files/
 
+chapter_5/fits/
 chapter_5_files/
 chapter_5_brms_files/
 chapter_5_practice_files/
 chapter_5_practice_brms_files/
 
+chapter_6/fits/
 chapter_6_files/
 chapter_6_brms_files/
 chapter_6_practice_files/
 chapter_6_practice_brms_files/
 
+chapter_7/fits/
 chapter_7_files/
 chapter_7_brms_files/
 chapter_7_practice_files/
