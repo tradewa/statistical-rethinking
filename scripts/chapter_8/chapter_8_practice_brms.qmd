@@ -2,8 +2,459 @@
 title: "Chapter 8 Practice BRMS"
 format: html
 ---
+```{r}
+rm(list = ls())
+```
+
+
 8M4. Repeat the tulips analysis, but this time use priors that constrain the effect of water to be positive and the effect of shade to be negative. Use prior predictive simulation. What do these prior asumptions mean for the interaction prior, if anything?
 ```{r}
+data("tulips", package = "rethinking")
 
+tulip_dat <- tulips %>% 
+  as_tibble() %>% 
+  mutate(light = -1 * shade,
+         blooms_std = blooms / max(blooms),
+         water_cent = water - mean(water),
+         shade_cent = shade - mean(shade),
+         light_cent = light - mean(light))
+
+b8m4 <-
+  brm(blooms_std ~ 1 + water_cent + light_cent + water_cent:light_cent,
+      data = tulip_dat,
+      family = gaussian,
+      prior = c(prior(normal(.5, .25), class = Intercept),
+                prior(normal(0, .25), class = b, lb = 0),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4, 
+      seed =  1234,
+      file = "fits/b8m4")
+```
+
+```{r}
+summary(b8m4)
+```
+
+```{r}
+new_tulip <- crossing(water_cent = -1:1,
+                      light_cent = -1:1)
+
+points <- tulip_dat %>% 
+  expand(nesting(water_cent, light_cent, blooms_std)) %>% 
+  mutate(light_grid = glue("light_cent = {light_cent}"))
+
+to_string <- as_labeller(c(`-1` = "Light = -1", `0` = "Light = 0",
+                           `1` = "Light = 1"))
+
+new_tulip %>% 
+  add_epred_draws(b8m4, ndraws = 50) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = water_cent, y = .epred)) +
+  facet_wrap(~light_cent, nrow = 1,
+             labeller = to_string) +
+  geom_line(aes(group = .draw), alpha = .4) +
+  geom_point(data = points, aes(y = blooms_std), color = "#009FB7") +
+  scale_x_continuous(breaks = -1:1) +
+  labs(x = "Water (centered)", y = "Blooms (standardized)")
+```
+
+```{r}
+b8m4p <-
+  update(b8m4,
+         sample_prior = "only",
+         iter = 4000, warmup = 2000, chains = 4, cores = 4, 
+         seed = 1234,
+         file = "fits/b8m4p.rds")
+
+new_tulip %>% 
+  add_epred_draws(b8m4p, ndraws = 50) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = water_cent, y = .epred)) +
+  facet_wrap(~light_cent, nrow = 1,
+             labeller = to_string) +
+  geom_line(aes(group = .draw), alpha = .3) +
+  geom_hline(yintercept = c(0, 1), linetype = "dashed") +
+  scale_x_continuous(breaks = -1:1) +
+  labs(x = "Water (centered)", y = "Blooms (standardized)")
+```
+
+**8H1.** Return to the data(tulips) example in the chapter. Now include the bed variable as a predictor in the interaction model. Don’t interact bed with the other predictors; just include it as a main effect. Note that bed is categorical. So to use it properly, you will need to either construct dummy variables, or rather an index variable, as explained in Chapter 5.
+```{r}
+tulip_dat <-
+  tulip_dat %>% mutate(bed = factor(bed))
+```
+
+```{r}
+b8h1 <-
+  brm(data = tulip_dat,
+      family = gaussian,
+      blooms_std ~ 0 + bed + water_cent + light_cent + water_cent:light_cent,
+      prior = c(prior(normal(0, .25), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b8h1.rds"
+      )
+```
+
+```{r}
+summary(b8h1)
+```
+
+```{r}
+b8m4 <- add_criterion(b8m4, criterion = "waic")
+b8h1 <- add_criterion(b8h1, criterion = "waic")
+
+loo_compare(b8m4, b8h1, criterion = "waic") %>% 
+  print(simplify = FALSE)
+```
+
+8H3. Consider again the data(rugged) data on economic development and terrain ruggedness, examined in this chapter. One of the African countries in that example Seychelles, is far outside the cloud of other nations, being a rare country with both relatively high GDP and high ruggedness. Seychelles is also unusual, in that it is a group of islands far from the coast of mainland Africa, and its main economic activity is tourism.
+
+a. Focus on model m8.5 from the chapter. Use WAIC pointwise penalties and PSIS Pareto k values to measure relative influence of each country. By these criteria, is Seychelles influencing the results? Are there other nations that are relatively influential? If so, can you explain why?
+b. Now use robust regression, as described in the previous chapter. Modify m8.5 to se a Student-t distribution with ν = 2. Does this change the results in a substantial way? 
+```{r}
+data(rugged, package = "rethinking")
+rugged_dat <- rugged
+rm(rugged)
+```
+
+```{r}
+rugged_dat <-
+  rugged_dat %>% 
+  as_tibble() %>% 
+  select(country, rgdppc_2000, rugged, cont_africa) %>% 
+  drop_na(rgdppc_2000) %>% 
+  mutate(log_gdp = log(rgdppc_2000),
+         log_gdp_std = log_gdp / mean(log_gdp),
+         rugged_std = rugged / max(rugged),
+         rugged_std_cent = rugged_std - mean(rugged_std),
+         cid = factor(cont_africa, levels = c(1, 0),
+                      labels = c("African", "Not African"))
+         )
+```
+
+
+```{r}
+b8h3 <-
+  brm(data = rugged_dat,
+      family = gaussian,
+      bf(log_gdp_std ~ 0 + a + b * rugged_std_cent,
+         a ~ 0 + cid,
+         b ~ 0 + cid,
+         nl = TRUE),
+      prior = c(prior(normal(1, .1), class = b, coef = cidAfrican, nlpar = a),
+                prior(normal(1, .1), class = b, coef = cidNotAfrican, nlpar = a),
+                prior(normal(0, .3), class = b, coef = cidAfrican, nlpar = b),
+                prior(normal(0, .3), class = b, coef = cidNotAfrican, nlpar = b),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b8h3.rds"
+      )
+```
+
+```{r}
+b8h3 <- add_criterion(b8h3, criterion = c("loo", "waic"))
+```
+
+```{r}
+summary(b8h3)
+```
+
+```{r}
+library(gghighlight)
+
+tibble(pareto_k = b8h3$criteria$loo$diagnostics$pareto_k,
+       p_waic = b8h3$criteria$waic$pointwise[, "p_waic"]) %>% 
+  rowid_to_column(var = "obs") %>% 
+  left_join(rugged_dat %>% 
+              select(country) %>% 
+              rowid_to_column(var = "obs"),
+            by = "obs") %>% 
+  ggplot(aes(x = pareto_k, y = p_waic)) +
+  geom_vline(xintercept = .7, linetype = "dashed") +
+  geom_hline(yintercept = .4, linetype = "dashed") +
+  geom_point() +
+  gghighlight(pareto_k > .7 | p_waic > .4, n = 1, label_key = country,
+              label_params = list(size = 3)) +
+  labs(x = "Pareto *k*", y = "p<sub>WAIC<sub>")
+```
+
+```{r}
+b8h3_t <-
+  brm(data = rugged_dat,
+      family = student,
+      bf(log_gdp_std ~ 0 + a + b * rugged_std_cent,
+         a ~ 0 + cid,
+         b ~ 0 + cid,
+         nu = 2,
+         nl = TRUE),
+      prior = c(prior(normal(1, .1), class = b, coef = cidAfrican, nlpar = a),
+                prior(normal(1, .1), class = b, coef = cidNotAfrican, nlpar = a),
+                prior(normal(0, .3), class = b, coef = cidAfrican, nlpar = b),
+                prior(normal(0, .3), class = b, coef = cidNotAfrican, nlpar = b),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b8h3_t.rds"
+      )
+```
+
+```{r}
+b8h3_t <- add_criterion(b8h3_t, criterion = c("loo", "waic"))
+```
+
+```{r}
+library(ggtext)
+
+n_diff <- 
+  spread_draws(b8h3, b_b_cidAfrican, b_b_cidNotAfrican) %>% 
+  mutate(diff = b_b_cidAfrican - b_b_cidNotAfrican)
+
+t_diff <-
+  spread_draws(b8h3_t, b_b_cidAfrican, b_b_cidNotAfrican) %>% 
+  mutate(diff = b_b_cidAfrican - b_b_cidNotAfrican)
+
+ggplot() +
+  geom_density(data = n_diff, aes(x = diff, fill = "Normal"),
+               color = NA, alpha = .6) +
+  geom_density(data = t_diff, aes(x = diff, fill = "Student's *t*"),
+               color = NA, alpha = .6) +
+  scale_fill_manual(values = c("#009FB7", "#FED766")) +
+  labs(x = "African - Non-African", y = "Density", fill = NULL) +
+  theme(legend.text = element_markdown())
+```
+
+8H4
+
+a.
+```{r}
+data(nettle, package = "rethinking")
+```
+
+```{r}
+nettle_dat <-
+  nettle %>% 
+  mutate(lang_per_cap = num.lang / k.pop,
+         log_lang_per_cap = log(lang_per_cap),
+         log_area = log(area),
+         lang_per_cap_std = standardize(log_lang_per_cap),
+         area_std = standardize(log_area),
+         mean_growing_std = standardize(mean.growing.season),
+         sd_growing_std = standardize(sd.growing.season))
+```
+
+```{r}
+b8h4a_1 <-
+  brm(data = nettle_dat,
+      family = gaussian,
+      lang_per_cap_std ~ 1 + mean_growing_std,
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b8h4a_1")
+
+b8h4a_2 <-
+  brm(data = nettle_dat,
+      family = gaussian,
+      lang_per_cap_std ~ 1 + mean_growing_std + area_std,
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b8h4a_2")
+```
+
+```{r}
+b8h4a_1 <- add_criterion(b8h4a_1, criterion = c("loo", "waic"))
+b8h4a_2 <- add_criterion(b8h4a_2, criterion = c("loo", "waic"))
+```
+
+```{r}
+summary(b8h4a_1)
+```
+
+```{r}
+summary(b8h4a_2)
+```
+
+```{r}
+loo_compare(b8h4a_1, b8h4a_2, criterion = "loo") %>% 
+  print(simplify = FALSE)
+```
+
+Visualize the model with area and see the impact of area towards the relationship of mean growing season and language per capita
+```{r}
+new_nettle <- 
+  crossing(area_std = seq(-4, 4, by = 2),
+           mean_growing_std = seq(-4, 4, by = 1),
+           sd_growing_std = seq(-4, 4, by = 1))
+
+to_string <- 
+  as_labeller(c(`-4` = "Area = -4", `-2` = "Area = -2",
+                `0` = "Area = 0",
+                `-2` = "Area = -2", `4` = "Area = 4"))
+
+new_nettle %>% 
+  add_epred_draws(b8h4a_2, ndraws = 1000) %>% 
+  mean_qi(.width = c(.67, .89, .97)) %>% 
+  ggplot(aes(x = mean_growing_std, y = .epred, ymin = .lower, ymax = .upper)) +
+  facet_wrap(~area_std, nrow = 1, labeller = to_string) +
+  geom_lineribbon(color = NA) +
+  # scale_fill_manual(
+  #   values = ramp_blue(seq(.9, .2, length.out = 3)),
+  #   breaks = c("0.67", "0.89", "0.97")) +
+  labs(x = "Mean Growing Season (standardized)",
+       y = "Log Languages per Capita (standardized)",
+       fill = "Interval")
+```
+
+b.
+```{r}
+b8h4b_1 <-
+  brm(data = nettle_dat,
+      family = gaussian,
+      lang_per_cap_std ~ 1 + sd_growing_std,
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b8h4b_1"
+      )
+
+b8h4b_2 <-
+  brm(data = nettle_dat,
+      family = gaussian,
+      lang_per_cap_std ~ 1 + sd_growing_std + area_std,
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b8h4b_2"
+      )
+```
+
+```{r}
+b8h4b_1 <- add_criterion(b8h4b_1, criterion = "loo")
+b8h4b_2 <- add_criterion(b8h4b_2, criterion = "loo")
+```
+
+
+```{r}
+loo_compare(b8h4b_1, b8h4b_2)
+```
+
+```{r}
+new_nettle %>% 
+  add_epred_draws(b8h4b_2, ndraws = 1000) %>% 
+  mean_qi(.width = c(0.67, 0.89, 0.97)) %>% 
+  ggplot(aes(x = sd_growing_std, y = .epred, ymin = .lower, ymax = .upper)) +
+  facet_wrap(~area_std, nrow = 1, labeller = to_string) +
+  geom_lineribbon(color = NA) +
+  # scale_fill_manual(values = ramp_blue(seq(0.9, 0.2, length.out = 3)),
+  #                   breaks = c("0.67", "0.89", "0.97")) +
+  labs(x = "Standard Deviation of Growing Season (standardized)",
+       y = "Log Languages per Capita (standardized)",
+       fill = "Interval")
+```
+
+```{r}
+b8h4c <-
+  brm(data = nettle_dat,
+      family = gaussian,
+      lang_per_cap_std ~ 1 + mean_growing_std + sd_growing_std + mean_growing_std:sd_growing_std,
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b8h4c")
+```
+
+```{r}
+summary(b8h4c)
+```
+
+```{r}
+library(patchwork)
+
+new_nettle <- crossing(mean_growing_std = seq(-2, 2, by = 0.5),
+                       sd_growing_std = seq(-2, 4, by = 0.5))
+
+int_preds <- new_nettle %>% 
+  add_epred_draws(b8h4c, ndraws = 1000) %>% 
+  mean_qi(.width = 0.97)
+
+facet_levels <- seq(-2, 2, by = 2)
+sd_facets <- list_along(facet_levels)
+for (i in seq_along(sd_facets)) {
+  points <- nettle_dat %>% 
+    mutate(diff = sd_growing_std - facet_levels[i])
+  
+  p <- int_preds %>% 
+    filter(sd_growing_std == facet_levels[i]) %>% 
+    ggplot(aes(x = mean_growing_std, y = .epred, ymin = .lower,
+               ymax = .upper)) +
+    geom_lineribbon(fill = "#99D8E2", color = "black") +
+    geom_point(data = points,
+               aes(x = mean_growing_std, y = lang_per_cap_std,
+                   alpha = -1 * abs(diff)), size = 0.5,
+               inherit.aes = FALSE, show.legend = FALSE) +
+    expand_limits(x = c(-2, 2), y = c(-2.5, 3.5)) +
+    labs(x = "Mean growing season", y = "Languages",
+         subtitle = glue("SD growing season = {facet_levels[i]}")) +
+    theme(plot.subtitle = element_text(size = 10))
+  
+  if (i == 2) {
+    p <- p +
+      theme(plot.margin = margin(0, 20, 0, 20))
+  } else {
+    p <- p +
+      theme(plot.margin = margin(0, 0, 0, 0))
+  }
+  
+  sd_facets[[i]] <- p
+}
+
+mean_facets <- list_along(facet_levels)
+for (i in seq_along(mean_facets)) {
+  points <- nettle_dat %>% 
+    mutate(diff = mean_growing_std - facet_levels[i])
+  
+  p <- int_preds %>% 
+    filter(mean_growing_std == facet_levels[i]) %>% 
+    ggplot(aes(x = sd_growing_std, y = .epred, ymin = .lower,
+               ymax = .upper)) +
+    geom_lineribbon(fill = "#99D8E2", color = "black") +
+    geom_point(data = points,
+               aes(x = sd_growing_std, y = lang_per_cap_std,
+                   alpha = -1 * abs(diff)), size = 0.5,
+               inherit.aes = FALSE, show.legend = FALSE) +
+    expand_limits(x = c(-2, 2), y = c(-2.5, 3.5)) +
+    labs(x = "SD growing season", y = "Languages",
+         subtitle = glue("Mean growing season = {facet_levels[i]}")) +
+    theme(plot.subtitle = element_text(size = 10))
+  
+  if (i == 2) {
+    p <- p +
+      theme(plot.margin = margin(30, 20, 0, 20))
+  } else {
+    p <- p +
+      theme(plot.margin = margin(30, 0, 0, 0))
+  }
+  
+  mean_facets[[i]] <- p
+}
+
+sd_patch <- (sd_facets[[1]] | sd_facets[[2]] | sd_facets[[3]])
+mean_patch <- (mean_facets[[1]] | mean_facets[[2]] | mean_facets[[3]])
+
+sd_patch / mean_patch
 ```
 
