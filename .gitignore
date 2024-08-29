@@ -44,9 +44,16 @@ chapter_8_brms_files/
 chapter_8_practice_files/
 chapter_8_practice_brms_files/
 
+chapter_9/fits/
+chapter_9_files/
+chapter_9_brms_files/
+chapter_9_practice_files/
+chapter_9_practice_brms_files/
+
 homework_week_01_files/
 homework_week_02_files/
 homework_week_03_files/
+homework_week_04_files/
 
 # History files
 .Rhistory

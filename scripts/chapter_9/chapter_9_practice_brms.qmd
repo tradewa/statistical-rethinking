@@ -1,0 +1,95 @@
+---
+title: "Chapter 9 Practice BRMs"
+format: html
+---
+
+```{r}
+library(tidyverse)
+library(khroma)
+```
+
+
+**9E6.** Sketch a good trace plot for a Markov chain, one that is effectively sampling from the posterior distribution. What is good about its shape? Then sketch a trace plot for a malfunctioning Markov chain. What about its shape indicates malfunction?
+```{r}
+iters <- 1000
+
+good_chain <- tibble(.iter = seq_len(iters),
+                     chain1 = rnorm(n = iters, mean = 0, sd = 1),
+                     chain2 = rnorm(n = iters, mean = 0, sd = 1),
+                     chain3 = rnorm(n = iters, mean = 0, sd = 1)) %>% 
+  pivot_longer(-.iter, names_to = "chain", values_to = "value")
+
+ggplot(good_chain, aes(x = .iter, y = value, color = chain)) +
+  geom_line(show.legend = FALSE) +
+  scale_color_okabeito() +
+  labs(x = "Iteration", y = "Value")
+```
+
+```{r}
+bad_chain <- tibble(.iter = seq_len(iters),
+                    chain1 = rnorm(n = iters, mean = 0, sd = 1),
+                    chain2 = rnorm(n = iters, mean = 0, sd = 1),
+                    chain3 = rnorm(n = iters, mean = 3, sd = .5)) %>% 
+  pivot_longer(-.iter, names_to = "chain", values_to = "value")
+
+ggplot(bad_chain, aes(x = .iter, y = value, color = chain)) +
+  geom_line(show.legend = FALSE) +
+  scale_color_okabeito() +
+  labs(x = "Iteration", y = "Value")
+```
+
+**9E7.** Repeat the problem above, but now for a trace rank plot.
+```{r}
+make_trank <- function(dat, bins = 20) {
+  dat <- dat %>% 
+    group_by(Chain) %>% 
+    mutate(iteration = 1:n()) %>% 
+    pivot_longer(-c(Chain, iteration),
+                 names_to = "parameter", values_to = "value") %>% 
+    group_by(parameter) %>% 
+    mutate(value_rank = row_number(value))
+  
+  bucket_counts <- dat %>% 
+    mutate(value_bucket = cut_interval(value_rank, n = bins,
+                                       labels = FALSE)) %>%
+    ungroup() %>% 
+    count(Chain, parameter, value_bucket)
+  
+  dat %>% 
+    ungroup() %>% 
+    select(Chain, iteration) %>% 
+    mutate(iter_bucket = cut_interval(iteration, n = bins,
+                                      labels = FALSE)) %>% 
+    left_join(bucket_counts, by = c("Chain", "iter_bucket" = "value_bucket")) %>% 
+    mutate(Chain = factor(Chain))
+}
+```
+
+```{r}
+good_chain %>% 
+  mutate(Chain = str_replace_all(chain, "chain", ""),
+         Chain = as.integer(Chain)) %>% 
+  select(Chain, value) %>% 
+  make_trank(bins = 25) %>% 
+  ggplot(aes(x = iteration, y = n, color = Chain)) +
+  geom_line(show.legend = FALSE, size = 1) +
+  scale_color_okabeito() +
+  scale_x_continuous(breaks = waiver(), n.breaks = 6,
+                     labels = ~.x * 3) +
+  labs(x = "Rank", y = "Samples")
+```
+
+```{r}
+bad_chain %>% 
+  mutate(Chain = str_replace_all(chain, "chain", ""),
+         Chain = as.integer(Chain)) %>% 
+  select(Chain, value) %>% 
+  make_trank(bins = 25) %>% 
+  ggplot(aes(x = iteration, y = n, color = Chain)) +
+  geom_line(na.rm = TRUE, show.legend = FALSE, size = 1) +
+  scale_color_okabeito() +
+  scale_x_continuous(breaks = waiver(), n.breaks = 6,
+                     labels = ~.x * 3) +
+  labs(x = "Rank", y = "Samples")
+```
+

@@ -458,3 +458,133 @@ mean_patch <- (mean_facets[[1]] | mean_facets[[2]] | mean_facets[[3]])
 sd_patch / mean_patch
 ```
 
+```{r}
+rm(list = ls())
+data(Wines2012, package = "rethinking")
+wine <- Wines2012
+rm(Wines2012)
+```
+
+```{r}
+wine <-
+  wine %>% 
+  mutate(score_std = rethinking::standardize(score),
+         judge_ind = factor(as.integer(judge)),
+         wine_ind = factor(as.integer(wine)),
+         red = factor(flight, levels = c("white", "red")),
+         judge_amer = factor(judge.amer),
+         wine_amer = factor(wine.amer))
+```
+
+```{r}
+b8h5 <-
+  brm(data = wine,
+      family = gaussian,
+      bf(score_std ~ 0 + j + w,
+         j ~ 0 + judge_ind,
+         w ~ 0 + wine_ind,
+         nl = TRUE),
+      prior = c(prior(normal(0, .5), nlpar = j),
+                prior(normal(0, .5), nlpar = w),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b8h5")
+```
+
+```{r}
+draws <- as_draws_df(b8h5) %>%
+  as_tibble() %>%
+  select(-sigma, -lp__) %>%
+  pivot_longer(-c(.chain, .iteration, .draw), names_to = c(NA, NA, "type", "num"), names_sep = "_",
+               values_to = "value", ) %>%
+  mutate(num = str_replace_all(num, "ind", ""),
+         num = as.integer(num))
+```
+
+```{r}
+draws %>% 
+  filter(type == "judge") %>% 
+  mutate(num = factor(num)) %>% 
+  left_join(wine %>% 
+              distinct(judge, judge_ind),
+            by = c("num" = "judge_ind")) %>% 
+  select(judge, value) %>% 
+  group_by(judge) %>% 
+  median_hdci(.width = c(.67, .89, .97)) %>% 
+  ggplot(aes(y = fct_rev(judge), x = value, xmin = .lower, xmax = .upper)) +
+  geom_interval() +
+  labs(y = NULL, x = "Parameter Value", color = "Interval")
+```
+
+```{r}
+draws %>% 
+  filter(type == "wine") %>% 
+  mutate(num = factor(num)) %>% 
+  left_join(wine %>% 
+              distinct(wine, wine_ind),
+            by = c("num" = "wine_ind")) %>% 
+  select(wine, value) %>% 
+  group_by(wine) %>% 
+  median_hdci(.width = c(.67, .89, .97)) %>% 
+  ggplot(aes(y = fct_rev(wine), x = value, xmin = .lower, xmax = .upper)) +
+  geom_interval() +
+  labs(y = NULL, x = "Parameter Value", color = "Interval")
+```
+
+8H6
+```{r}
+b8h6 <-
+  brm(data = wine,
+      family = gaussian,
+      score_std ~ red + wine_amer + judge_amer,
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b8h6")
+```
+
+```{r}
+fixef(b8h6)
+```
+
+```{r}
+b8h7 <-
+  brm(score_std ~ wine_amer + judge_amer + red +
+        wine_amer:judge_amer + wine_amer:red + judge_amer:red,
+      data = wine,
+      family = gaussian,
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
+                prior(normal(0, .25), class = b,
+                      coef = judge_amer1:redred),
+                prior(normal(0, .25), class = b,
+                      coef = wine_amer1:judge_amer1),
+                prior(normal(0, .25), class = b,
+                      coef = wine_amer1:redred),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b8h7")
+```
+
+```{r}
+fixef(b8h7) %>% round(digits = 4)
+```
+
+```{r}
+wine %>% 
+  distinct(wine_amer, judge_amer, red) %>% 
+  mutate(combo = glue("{ifelse(judge_amer == 0, 'French', 'American')} judge, ",
+                      "{ifelse(wine_amer == 0, 'French', 'American')} wine")) %>%
+  add_epred_draws(b8h7) %>% 
+  median_hdi(.width = c(.67, .89, .97)) %>% 
+  ggplot(aes(x = .epred, xmin = .lower, xmax = .upper, y = combo)) +
+  facet_wrap(~red, nrow = 1, labeller = as_labeller(str_to_title)) +
+  geom_interval() +
+  labs(x = "Value", y = NULL, color = "Interval")
+           
+```
+
