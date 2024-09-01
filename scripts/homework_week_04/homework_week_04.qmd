@@ -1,0 +1,368 @@
+---
+title: "Homework Week 4"
+format: html
+---
+```{r}
+library(tidyverse)
+library(brms)
+```
+
+
+**1.** Revisit the marriage, age, and happiness collider bias example from Chapter 6. Run models m6.9 and m6.10 again (pages 178–179). Compare these two models using both PSIS and WAIC. Which model is expected to make better predictions, according to these criteria? On the basis of the causal model, how should you interpret the parameter estimates from the model preferred by PSIS and WAIC?
+```{r}
+d <- rethinking::sim_happiness(seed = 1977, N_years = 1000)
+
+dat <- d %>% 
+  filter(age > 17) %>% 
+  mutate(a = (age - 18) / (65-18),
+         mid = factor(married + 1, labels = c("single", "married")))
+
+b6.9 <- 
+  brm(data = dat,
+      family = gaussian,
+      happiness ~ 0 + mid + a,
+      prior = c(prior(normal(0, 1), class = b, coef = midmarried),
+                prior(normal(0, 1), class = b, coef = midsingle),
+                prior(normal(0, 2), class = b, coef = a),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/w4h1-6.9")
+
+b6.10 <-
+  brm(data = dat,
+      family = gaussian,
+      happiness ~ 1 + a,
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 2), class = b, coef = a),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/w4h1-6.10")
+```
+
+```{r}
+b6.9 <- add_criterion(b6.9, criterion = c("waic", "loo"))
+b6.10 <- add_criterion(b6.10, criterion = c("waic", "loo"))
+
+loo_compare(b6.9, b6.10, criterion = "waic")
+loo_compare(b6.9, b6.10, criterion = "loo")
+```
+
+**2.** Reconsider the urban fox analysis from last week’s homework. On the basis of PSIS and WAIC scores, which combination of variables best predicts body weight (
+W
+, weight)? How would you interpret the estimates from the best scoring model?
+```{r}
+data(foxes, package = "rethinking")
+fox_dat <- foxes %>% 
+  as_tibble() %>% 
+  select(area, avgfood, weight, groupsize) %>% 
+  mutate(across(everything(), rethinking::standardize))
+```
+
+```{r}
+# weight = avgfood + groupsize + area
+fox_1 <-
+  brm(data = fox_dat,
+      family = gaussian,
+      weight ~ 1 + avgfood + groupsize + area,
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/w4h2-1")
+
+# weight = avgfood + groupsize
+fox_2 <-
+  brm(data = fox_dat,
+      family = gaussian,
+      weight ~ 1 + avgfood + groupsize,
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/w4h2-2")
+
+# weight = groupsize + area
+fox_3 <-
+  brm(data = fox_dat,
+      family = gaussian,
+      weight ~ 1 + groupsize + area,
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/w4h2-3")
+
+# weight = avgfood + area
+fox_4 <-
+  brm(data = fox_dat,
+      family = gaussian,
+      weight ~ 1 + avgfood + area,
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/w4h2-4")
+
+# weight = area
+fox_5 <-
+  brm(data = fox_dat,
+      family = gaussian,
+      weight ~ 1 + area,
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/w4h2-5")
+
+fox_1 <- add_criterion(fox_1, criterion = c("waic", "loo"))
+fox_2 <- add_criterion(fox_2, criterion = c("waic", "loo"))
+fox_3 <- add_criterion(fox_3, criterion = c("waic", "loo"))
+fox_4 <- add_criterion(fox_4, criterion = c("waic", "loo"))
+fox_5 <- add_criterion(fox_5, criterion = c("waic", "loo"))
+```
+
+```{r}
+loo_compare(fox_1, fox_2, fox_3, fox_4, fox_5, criterion = "waic")
+
+loo_compare(fox_1, fox_2, fox_3, fox_4, fox_5, criterion = "loo")
+```
+
+```{r}
+fixef(fox_4)
+```
+
+```{r}
+fixef(fox_1)
+```
+**3.** OPTIONAL CHALLENGE
+```{r}
+data(Dinosaurs, package = "rethinking")
+dino_dat <-
+  Dinosaurs %>% 
+  as_tibble() %>% 
+  select(species_name = species,
+         species = sp_id,
+         age,
+         mass) %>% 
+  group_by(species) %>% 
+  mutate(prop_mass = mass / max(mass),
+         species = factor(species)) %>% 
+  ungroup()
+
+one_dino <- filter(dino_dat, species == 1)
+```
+
+Exploratory data analysis
+```{r}
+one_dino %>% 
+  ggplot(aes(x = age, y = mass)) +
+  geom_point(size = 2, shape = 1) +
+  theme_bw()
+```
+
+We'll choose to model sp_id 3 (Massospondylus carinatus) and 4 (Psittacosaurus mongoliensis) because they have the most data available
+```{r}
+# Mass ~ 1 + Age for sp_id = 3
+one_dino_linear <-
+  brm(data = one_dino,
+      family = gaussian,
+      prop_mass ~ 1 + age,
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/w4h4-one-linear")
+```
+
+```{r}
+print(one_dino_linear)
+```
+
+```{r}
+new_dat <- tibble(age = seq(0, 16, length.out = 50))
+
+new_dat %>% 
+  add_epred_draws(one_dino_linear) %>% 
+  ggplot(aes(x = age, y = .epred)) +
+  stat_lineribbon(.width = .89, fill = "#009FB7", alpha = .4,
+                  color = NA) +
+  stat_lineribbon(fill = "transparent") +
+  geom_point(data = one_dino, aes(y = prop_mass), size = 2) +
+  scale_x_continuous(breaks = seq(0, 15, by = 5)) +
+  coord_cartesian(ylim = c(0, 1.05), expand = FALSE) +
+  labs(x = "Age", y = "Mass (normalized)") +
+  theme_minimal()
+```
+
+```{r}
+three_dino <- dino_dat %>% filter(species == 3)
+
+three_dino_linear <-
+  brm(data = three_dino,
+      family = gaussian,
+      prop_mass ~ 1 + age,
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/w4h4-three-linear")
+```
+
+```{r}
+print(three_dino_linear)
+```
+
+
+```{r}
+new_dat %>% 
+  add_epred_draws(three_dino_linear) %>% 
+  ggplot(aes(x = age, y = .epred)) +
+  stat_lineribbon(.width = .89, alpha = .4, fill = "#009FB7",
+                  color = NA) +
+  stat_lineribbon(fill = "transparent") +
+  geom_point(data = three_dino, aes(y = prop_mass), size = 2) +
+  scale_x_continuous(breaks = seq(0, 15, by = 5)) +
+  coord_cartesian(ylim = c(0, 1.1), expand = FALSE) +
+  labs(x = "Age", y = "Mass (normalized)") +
+  theme_minimal()
+```
+
+The next model is based on scientific model
+$$
+\frac{dM}{dA} = k(\phi - M)
+$$
+
+Where $M$ is mass, $A$ is age, $k$ is rate, and $\phi$ is the maximum adult size. Solving the equation gives us:
+$$
+M(A) = \phi(1 - exp(-kA))
+$$
+
+We can define this equation in {brms} using the non-linear syntax
+
+```{r}
+one_dino_bio <-
+  brm(data = one_dino,
+      family = gaussian,
+      bf(prop_mass ~ phi * (1 - exp(-k * age)),
+         phi + k ~ 1,
+         nl = TRUE),
+      prior = c(prior(normal(1, 0.5), nlpar = phi),
+                prior(exponential(1), nlpar = k, lb = 0),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 3000, chains = 4, core = 4,
+      seed = 1234,
+      control = list(adapt_delta = 0.95),
+      file = "fits/w4h4-one-bio")
+```
+```{r}
+print(one_dino_bio)
+```
+
+
+```{r}
+new_dat %>% 
+  add_epred_draws(one_dino_bio) %>% 
+  ggplot(aes(x = age, y = .epred)) +
+  stat_lineribbon(.width = .89, fill = "#009FB7", alpha = .4,
+                  color = NA) +
+  stat_lineribbon(fill = "transparent") +
+  geom_point(data = one_dino, aes(y = prop_mass), size = 2) +
+  scale_x_continuous(breaks = seq(0, 5, by = 5)) +
+  coord_cartesian(ylim = c(0, 1.05), expand = FALSE) +
+  labs(x = "Age", y = "Mass (normalized)")
+```
+More realistic model
+$$
+M(A) = \phi(1 - exp(-kA))^{\theta}
+$$
+```{r}
+one_dino_acc <- 
+  brm(bf(prop_mass ~ phi * (1 - exp(-k * age)) ^ theta,
+         phi + k + theta ~ 1,
+         nl = TRUE), data = one_dino, family = gaussian,
+      prior = c(prior(normal(1, 0.5), nlpar = phi),
+                prior(exponential(1), nlpar = k, lb = 0),
+                prior(exponential(0.1), nlpar = theta, lb = 0),
+                prior(exponential(1), class = sigma)),
+      iter = 40000, warmup = 38000, chains = 4, cores = 4, 
+      seed = 1234,
+      control = list(adapt_delta = 0.999, max_treedepth = 15),
+      file = "fits/w4h4-one-acc")
+```
+
+```{r}
+print(one_dino_acc)
+```
+
+
+```{r}
+new_dat %>% 
+  add_epred_draws(one_dino_acc) %>% 
+  
+  ggplot(aes(x = age, y = .epred)) +
+  stat_lineribbon(.width = .89, fill = "#009FB7", alpha = .4,
+                  color = NA) +
+  stat_lineribbon(fill = "transparent") +
+  geom_point(data = one_dino, aes(y = prop_mass), size = 2) +
+  scale_x_continuous(breaks = seq(0, 15, by = 5)) +
+  coord_cartesian(ylim = c(0, 1.05), expand = FALSE) +
+  labs(x = "Age", y = "Mass (normalized)")
+```
+```{r}
+one_dino_linear <- add_criterion(one_dino_linear, criterion = "loo")
+one_dino_bio <- add_criterion(one_dino_bio, criterion = "loo")
+one_dino_acc <- add_criterion(one_dino_acc, criterion = "loo")
+
+loo_compare(one_dino_linear, one_dino_bio, one_dino_acc, criterion = "loo")
+```
+
+```{r}
+all_dinos <-
+  brm(data = dino_dat,
+      family = gaussian,
+      bf(prop_mass ~ phi * (1 - exp(-k * age)) ^ theta,
+         phi ~ 0 + species,
+         k ~ 0 + species,
+         theta ~ 0 + species,
+         nl = TRUE),
+      prior = c(prior(normal(1, 0.5), nlpar = phi),
+                prior(exponential(1), nlpar = k, lb = 0),
+                prior(exponential(0.1), nlpar = theta, lb = 0),
+                prior(exponential(1), class = sigma)),
+      iter = 10000, warmup = 9000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/w4h4-all")
+```
+
+```{r}
+p <- 
+  distinct(dino_dat, species_name, species) %>% 
+  expand_grid(age = seq(0, 16, length.out = 50)) %>% 
+  add_epred_draws(all_dinos) %>% 
+  
+  ggplot(aes(x = age, y = .epred, fill = species_name, 
+             color = species_name)) +
+  stat_lineribbon(.width = 0.89, alpha = 0.6, color = NA) +
+  stat_lineribbon(fill = "transparent") +
+  geom_point(data = dino_dat, aes(y = prop_mass), size = 2) +
+  scale_fill_viridis_d(option = "turbo") +
+  scale_color_viridis_d(option = "turbo") +
+  scale_x_continuous(breaks = seq(0, 15, by = 5)) +
+  coord_cartesian(ylim = c(0, 2.05), expand = FALSE) +
+  labs(x = "Age", y = "Mass (normalized)", fill = "Species",
+       color = "Species")
+
+p +
+  facet_wrap(~species_name, ncol = 3) +
+  guides(fill = "none", color = "none")
+```
+
