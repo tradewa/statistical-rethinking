@@ -417,3 +417,224 @@ tibble(x = 0:10) %>%
   facet_wrap(~ strip, labeller = label_parsed)
 ```
 
+### 10.2.2 Linking linear models to distributions
+Models generally follow the form
+$$
+\begin{align*}
+  y_{i} & \sim \text{Some distribution}(\theta_{i}, \phi)\\
+  f(\theta_{i}) & = \alpha + \beta(x_{i} - \bar{x})
+\end{align*}
+$$
+Where $\theta_{i}$ is a parameter of central interest and $\phi$ is a placeholder for any other parameters necessary for the likelihood but not typically of primary substantive interest.
+
+Logit link maps a parameter that is defined as a probability mass, and therefore constrained to lie between zero and one, onto a linear model that can take on any real value. This link is extremely common when working with binomial GLMs.
+$$
+\begin{align}
+y_{i} & = \text{Binomial}(n, p_{i}) \\
+\text{logit}(p_{i}) & = \alpha + \beta x_{i}
+\end{align}
+$$
+
+The logit function is defined as the log-odds
+$$
+\text{logit}(p_{i}) = \text{log} \frac{p_{i}}{1 - p_{i}}
+$$
+
+The odds of an event are just the probability it happens divided by the probability it does not happen. So really all that is being stated here is:
+$$
+\text{log} \frac{p_{i}}{1 - p_{i}} = \alpha + \beta x_{i}
+$$
+
+We can solve for $p_{i}$ in terms of the linear model
+$$
+p_{i} = \frac{\text{exp}(\alpha + \beta x_{i})}{1 + \text{exp}(\alpha + \beta x_{i})}
+$$
+
+We'll use the formula brms::inv_logit_scaled() when making sense of logistic regression models
+```{r}
+# first, we'll make data for the horizontal lines
+alpha <- 0
+beta <- 4
+
+lines <-
+  tibble(x = seq(from = -1, to = 1, by = .25)) %>% 
+  mutate("log-odds" = alpha + x * beta,
+         probability = exp(alpha + x * beta) / (1 + exp(alpha + x * beta)))
+
+# now we're ready to make the primary data
+beta <- 2
+d <- 
+  tibble(x = seq(from = -1.5, to = 1.5, length.out = 50)) %>% 
+  mutate("log-odds" = alpha + x * beta,
+         probability = exp(alpha + x * beta) / (1 + exp(alpha + x * beta)))
+
+# now we make the individual plots
+p1 <-
+  d %>% 
+  ggplot(aes(x = x, y = `log-odds`)) +
+  geom_hline(data = lines,
+             aes(yintercept = `log-odds`),
+             color = ghibli_palette("YesterdayMedium")[6]) +
+  geom_line(linewidth = 1.5, 
+            color = ghibli_palette("YesterdayMedium")[3]) +
+  coord_cartesian(xlim = c(-1, 1)) +
+  theme(panel.background = element_rect(fill = ghibli_palette("YesterdayMedium")[5]),
+        panel.grid = element_blank())
+
+p2 <-
+  d %>% 
+  ggplot(aes(x = x, y = probability)) +
+  geom_hline(data = lines,
+             aes(yintercept = probability),
+             color = ghibli_palette("YesterdayMedium")[6]) +
+  geom_line(linewidth = 1.5,
+            color = ghibli_palette("YesterdayMedium")[3]) +
+  coord_cartesian(xlim = c(-1, 1)) +
+  theme(panel.background = element_rect(fill = ghibli_palette("YesterdayMedium")[7]),
+        panel.grid = element_blank())
+
+# finally, we're ready to mash the plots together and behold their nerdy glory
+(p1 | p2) +
+  plot_annotation(
+    subtitle = "The logit link transforms a linear model (left) into a probability (right).")
+```
+
+The second common link function is the log link. This link function maps a parameter that is defined over only positive real values onto a linear model. For example, suppose we want to model the standard deviation $\sigma$ of a Gaussian distribution so it is a function of a predictor variable $x$. The parameter $\sigma$ must be positive, because a standard deviation cannot be negative nor can it be zero. The model might look like:
+$$
+\begin{align}
+y_{i} & \sim \text{Normal}(\mu, \sigma_{i}) \\
+\text{log}(\sigma_{i}) & = \alpha + \beta x_{i}
+\end{align}
+$$
+
+```{r}
+set.seed(10)
+
+(
+  d <-
+    tibble(x = rep(0:1, each = 100)) %>% 
+    mutate(y = rnorm(n = n(), mean = 100, sd = 10 + x * 10))
+)
+```
+
+```{r}
+library(tidybayes)
+
+d %>% 
+  mutate(x = x %>% as.character()) %>% 
+  
+  ggplot(aes(x = y, y = x, fill = x)) +
+  stat_halfeye(point_interval = mean_qi, .width = .68,
+               color = ghibli_palette("KikiMedium")[2]) +
+  scale_fill_manual(values = c(ghibli_palette("KikiMedium")[c(4, 6)])) +
+  coord_cartesian(ylim = c(1.5, 2)) +
+  theme(axis.ticks.y = element_blank(),
+        legend.position = "none",
+        panel.background = element_rect(fill = ghibli_palette("KikiMedium")[7]),
+        panel.grid = element_blank())
+```
+
+Even though the means of y are the same for both levels of the x dummy, the variance for x == 1 is substantially larger than that for x == 0. Let’s open brms.
+
+```{r}
+library(brms)
+```
+
+```{r}
+b10.1 <-
+  brm(data = d,
+      family = gaussian,
+      bf(y ~ 1, sigma ~ 1 + x),
+      prior = c(prior(normal(100, 5), class = Intercept),
+                prior(normal(2.70805, 0.5), class = Intercept, dpar = sigma),
+                prior(normal(0, 0.5), class = b, dpar = sigma)),
+      seed = 10,
+      file = "fits/b10.01")
+```
+
+```{r}
+print(b10.1)
+```
+
+```{r}
+post <- as_draws_df(b10.1)
+head(post)
+```
+
+With the samples in hand, we’ll use the model formula to compute the model-implied standard deviations of y based on the x dummy and then examine them in a plot.
+
+```{r}
+post %>% 
+  mutate(`x == 0` = exp(b_sigma_Intercept + b_sigma_x * 0),
+         `x == 1` = exp(b_sigma_Intercept + b_sigma_x * 1)) %>% 
+  pivot_longer(contains("==")) %>% 
+  
+  ggplot(aes(x = value, y = name, fill = name)) +
+  stat_halfeye(point_interval = median_qi, .width = .95,
+               color = ghibli_palette("KikiMedium")[2]) +
+  scale_fill_manual(values = c(ghibli_palette("KikiMedium")[c(4, 6)])) +
+  labs(subtitle = "Model-implied standard deviations by group",
+       x = expression(sigma[x]),
+       y = NULL) +
+  coord_cartesian(ylim = c(1.5, 2)) +
+  theme(axis.ticks.y = element_blank(),
+        legend.position = "none",
+        panel.background = element_rect(fill = ghibli_palette("KikiMedium")[7]),
+        panel.grid = element_blank())
+```
+
+If we looked back at the data, those SD estimates are right about what we’d expect.
+```{r}
+d %>% 
+  group_by(x) %>% 
+  summarise(sd = sd(y) %>% round(digits = 1)) 
+```
+
+What the log link effectively assumes is that the parameter’s value is the exponentiation of the linear model. Solving $\text{log}(\sigma_{i}) = (\alpha + \beta x_{i})$ for $\sigma_{i}$ yields the inverse link:
+$$
+\sigma_{i} = \text{exp}(\alpha + \beta x_{i})
+$$
+
+
+```{r}
+# first, we'll make data that'll be make the horizontal lines
+alpha <- 0
+beta <- 2
+
+lines <-
+  tibble(`log-measurement` = -3:3,
+         `original measurement` = exp(-3:3))
+
+# now we're ready to make the primary data
+d <-
+  tibble(x = seq(from = -1.5, to = 1.5, length.out = 50)) %>% 
+  mutate(`log-measurement` = alpha + x * beta,
+         `original measurement` = exp(alpha + x * beta))
+
+# now we make the individual plots
+p1 <-
+  d %>% 
+  ggplot(aes(x = x, y = `log-measurement`)) +
+  geom_hline(data = lines,
+             aes(yintercept = `log-measurement`),
+             color = ghibli_palette("YesterdayMedium")[6]) +
+  geom_line(linewidth = 1.5, color = ghibli_palette("YesterdayMedium")[3]) +
+  coord_cartesian(xlim = c(-1, 1)) +
+  theme(panel.background = element_rect(fill = ghibli_palette("YesterdayMedium")[5]),
+        panel.grid = element_blank())
+p2 <-
+  d %>% 
+  ggplot(aes(x = x, y = `original measurement`)) +
+  geom_hline(data = lines,
+             aes(yintercept = `original measurement`),
+             color = ghibli_palette("YesterdayMedium")[6]) +
+  geom_line(linewidth = 1.5, color = ghibli_palette("YesterdayMedium")[3]) +
+  scale_y_continuous(position = "right", limits = c(0, 10)) +
+  coord_cartesian(xlim = c(-1, 1)) +
+  theme(panel.background = element_rect(fill = ghibli_palette("YesterdayMedium")[7]),
+        panel.grid = element_blank())
+
+# combine the ggplots
+p1 | p2
+```
+
