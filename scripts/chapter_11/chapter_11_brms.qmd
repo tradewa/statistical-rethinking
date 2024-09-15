@@ -1,0 +1,494 @@
+---
+title: "11 God Spiked the Integers"
+format: html
+---
+
+### 11.1.1 Logistic regression: Prosocial cimpanzees
+```{r}
+data(chimpanzees, package = "rethinking")
+d <- chimpanzees
+rm(chimpanzees)
+```
+
+```{r}
+library(tidyverse)
+library(flextable)
+
+d %>% 
+  distinct(prosoc_left, condition) %>% 
+  mutate(description = str_c("Two food items on",
+                             c("right and no partner",
+                               "left and no partner",
+                               "right and partner present",
+                               "left and partner present"))) %>% 
+  flextable() %>% 
+  width(width = c(1, 1, 4))
+```
+We will use index variable approach to include these two variables.
+
+```{r}
+d <-
+  d %>% 
+  mutate(treatment = factor(1 + prosoc_left + 2 * condition)) %>% 
+  # this will come in handy, later
+  mutate(labels = factor(treatment,
+                         levels = 1:4,
+                         labels = c("r/n", "l/n", "r/p", "l/p")))
+```
+
+We can use the dplyer::count() function to get a sense of the distribution of the conditions in the data
+```{r}
+d %>% 
+  count(condition, treatment, prosoc_left)
+```
+
+```{r}
+library(brms)
+```
+
+We start with the simple intercept-only logistic regression model, which follow the statistical formula
+$$
+\begin{align}
+\text{pulled_left}_{i} & \sim \text{Binomial}(1, p_{i}) \\
+\text{logit}(p_{i}) & = \alpha \\
+\alpha & \sim \text{Normal}(0, w),
+\end{align}
+$$
+
+```{r}
+b11.1 <-
+  brm(data = d,
+      family = binomial,
+      pulled_left | trials(1) ~ 1,
+      prior(normal(0, 10), class = Intercept),
+      seed = 11,
+      sample_prior = T,
+      file = "fits/b11.01")
+```
+
+```{r}
+library(wesanderson)
+wes_palette("Moonrise2")
+```
+
+```{r}
+wes_palette("Moonrise2")[1:4]
+```
+
+Update theme set by default
+```{r}
+library(ggthemes)
+
+theme_set(
+  theme_default() +
+    theme_tufte() +
+    theme(plot.background = 
+            element_rect(fill = wes_palette("Moonrise2")[3],
+                         color = wes_palette("Moonrise2")[3]))
+)
+```
+
+Now we're ready to plot. We'll extract the prior draws with ```prior_draws()```, convert them from the log-odds metric to the probability metrics with the ```brms::inv_logit_scaled()``` function, and adjust the bandwidth of the density plot with the ```adjust``` argument within ```geom_density()```.
+```{r}
+prior_draws(b11.1) %>% 
+  mutate(p = inv_logit_scaled(Intercept)) %>% 
+  
+  ggplot(aes(x = p)) +
+  geom_density(fill = wes_palette("Moonrise2")[4],
+               linewidth = 0, adjust = 0.1) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  xlab("prior prob pull left")
+```
+
+Update the model so that w = 1.5
+```{r}
+b11.1b <-
+  brm(data = d,
+      family = binomial,
+      pulled_left | trials(1) ~ 1,
+      prior(normal(0, 1.5), class = Intercept),
+      seed = 11,
+      sample_prior = T,
+      file = "fits/b11.01b"
+      )
+```
+
+Now we can make the full version of the left panel of Figure 11.3
+```{r}
+#wrangle
+bind_rows(prior_draws(b11.1),
+          prior_draws(b11.1b)) %>% 
+  mutate(p = inv_logit_scaled(Intercept),
+         w = factor(rep(c(10, 1.5), each = n() / 2),
+                    levels = c(10, 1.5))) %>% 
+  
+  # plot
+  ggplot(aes(x = p, fill = w)) +
+  geom_density(linewidth = 0, alpha = 3/4, adjust = 0.1) +
+  scale_fill_manual(expression(italic(w)),
+                    values = wes_palette("Moonrise2")[c(4, 1)]) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  labs(title = expression(alpha%~%Normal(0*", "*italic(w))),
+       x = "prior prob pull left")
+```
+
+If we'd like to fit a model that includes an overall intercept and uses McElreath'd index variable apporach for the predictor variable treatment, we'll have to switch to the brms non-linear syntax. Here it is for the models using w = 10 and then w = 0.5.
+```{r}
+# w = 10
+b11.2 <-
+  brm(data = d,
+      family = binomial,
+      bf(pulled_left | trials(1) ~ a + b,
+         a ~ 1,
+         b ~ 0 + treatment,
+         nl = TRUE),
+      prior = c(prior(normal(0, 1.5), nlpar = a),
+                prior(normal(0, 10), nlpar = b, coef = treatment1),
+                prior(normal(0, 10), nlpar = b, coef = treatment2),
+                prior(normal(0, 10), nlpar = b, coef = treatment3),
+                prior(normal(0, 10), nlpar = b, coef = treatment4)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 11,
+      sample_prior = T,
+      file = "fits/b11.02")
+
+# w = 0.5
+b11.3 <-
+  brm(data = d,
+      family = binomial,
+      bf(pulled_left | trials(1) ~ a + b,
+         a ~ 1,
+         b ~ 0 + treatment,
+         nl = TRUE),
+      prior = c(prior(normal(0, 1.5), nlpar = a),
+                prior(normal(0, 0.5), nlpar = b, coef = treatment1),
+                prior(normal(0, 0.5), nlpar = b, coef = treatment2),
+                prior(normal(0, 0.5), nlpar = b, coef = treatment3),
+                prior(normal(0, 0.5), nlpar = b, coef = treatment4)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 11,
+      sample_prior = T,
+      file = "fits/b11.03")
+```
+
+Right panel of Figure 11.3
+```{r}
+# wrangle
+prior <-
+  bind_rows(prior_draws(b11.2),
+            prior_draws(b11.3)) %>% 
+  mutate(w = factor(rep(c(10, 0.5), each = n() / 2),
+                        levels = c(10, 0.5)),
+         p1 = inv_logit_scaled(b_a + b_b_treatment1),
+         p2 = inv_logit_scaled(b_a + b_b_treatment2)) %>% 
+  mutate(diff = abs(p1 - p2))
+
+# plot
+prior %>% 
+  ggplot(aes(x = diff, fill = w)) +
+  geom_density(linewidth = 0, alpha = 3/4, adjust = 0.1) +
+  scale_fill_manual(expression(italic(w)), 
+                    values = wes_palette("Moonrise2")[c(4, 2)]) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  labs(title = expression(alpha %~% Normal(0*", "*italic(w))),
+       x = "prior diff between treatments")
+```
+
+Here are the averages of the two prior-predictive difference distributions.
+```{r}
+prior %>% 
+  group_by(w) %>% 
+  summarise(mean = mean(diff))
+```
+
+Before we move on to fit the full model, it might be useful to linger here and examine the nature of the model we just fit. Here's the parameter summary for b11.3
+```{r}
+print(b11.3)
+```
+
+Now focus on the likelihood portion of the model formula
+$$
+\begin{align}
+\text{pulled_left}_{i} & \sim \text{Binomial}(1, p_{i}) \\
+\text{logit}(p_{i}) & = \alpha + \beta_{treatment}.
+\end{align}
+$$
+
+When you have one overall intercept $\alpha$ and then use the non-linear approach for the treatment index, you end up with as many $\beta$ parameters as there levels for treatment. This means the formula for treatment == 1 is $\alpha + \beta_{treatment[1]}$, the formula for treatment == 2 is $\alpha + \beta_{treatment[2]}$, and so on. This also effectively makes $\alpha$ the grand mean. Here's the empirical grand mean.
+
+```{r}
+d %>% 
+  summarise(grand_mean = mean(pulled_left))
+```
+
+Now here's the summary of $\alpha$ after transforming it back into the probability metric with the inv_logit_scaled() function
+```{r}
+library(tidybayes)
+
+as_draws_df(b11.3) %>% 
+  transmute(alpha = inv_logit_scaled(b_a_Intercept)) %>% 
+  mean_qi()
+```
+
+Here are the empirical probabilities for each of the four levels of treatment
+```{r}
+d %>% 
+  group_by(treatment) %>% 
+  summarise(mean = mean(pulled_left))
+```
+
+Here are the corresponding posteriors.
+```{r}
+as_draws_df(b11.3) %>% 
+  pivot_longer(b_b_treatment1:b_b_treatment4) %>% 
+  mutate(treatment = str_remove(name, "b_b_treatment"),
+         mean = inv_logit_scaled(b_a_Intercept + value)) %>% 
+  group_by(treatment) %>% 
+  mean_qi(mean)
+```
+
+Let's get back on track with the text. Now we're ready to fit the full model, which follows the form
+$$
+\begin{align}
+\text{pulled_left}_{i} & \sim \text{Binomial}(1, p_i) \\
+\text{logit}(p_{i}) & = \alpha_{actor[i]} + \beta_{treatment[i]} \\
+\alpha_{j} & \sim \text{Normal}(0, 1.5) \\
+\beta_{k} & \sim \text{Normal}(0, 0.5).
+\end{align}
+$$
+
+Before fitting the model , we should save actor as factor
+```{r}
+d <-
+  d %>% 
+  mutate(actor = factor(actor))
+```
+
+```{r}
+b11.4 <-
+  brm(data = d,
+      family = binomial,
+      bf(pulled_left | trials(1) ~ a + b,
+         a ~ 0 + actor,
+         b ~ 0 + treatment,
+         nl = TRUE),
+      prior = c(prior(normal(0, 1.5), nlpar = a),
+                prior(normal(0, 0.5), nlpar = b)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 11,
+      file = "fits/b11.04")
+```
+
+```{r}
+print(b11.4)
+```
+
+Coefficient plot
+```{r}
+library(tidybayes)
+
+post <- as_draws_df(b11.4)
+
+post %>% 
+  pivot_longer(contains("actor")) %>% 
+  mutate(probability = inv_logit_scaled(value),
+         actor = factor(str_remove(name, "b_a_actor"),
+                        levels = 7:1)) %>% 
+  
+  ggplot(aes(x = probability, y = actor)) +
+  geom_vline(xintercept = .5, 
+             color = wes_palette("Moonrise2")[1],
+             linetype = 3) +
+  stat_pointinterval(.width = .95, size = 1/2,
+                     color = wes_palette("Moonrise2")[4]) +
+  scale_x_continuous(expression(alpha[actor]), limits = 0:1) +
+  ylab(NULL) +
+  theme(axis.ticks.y = element_blank())
+```
+
+Here's the corresponding coefficient plot of the $\beta$ parameters.
+```{r}
+tx <- c("R/N", "L/N", "R/P", "L/P")
+
+post %>% 
+  select(contains("treatment")) %>% 
+  set_names("R/N", "L/N", "R/P", "L/P") %>% 
+  pivot_longer(everything()) %>% 
+  mutate(probability = inv_logit_scaled(value),
+         treatment = factor(name, levels = tx)) %>% 
+  mutate(treatment = fct_rev(treatment)) %>% 
+  
+  ggplot(aes(x = value, y = treatment)) +
+  geom_vline(xintercept = 0,
+             color = wes_palette("Moonrise2")[2],
+             linetype = 3) +
+  stat_pointinterval(.width = .95, size = 1/2,
+                     color = wes_palette("Moonrise2")[4]) +
+  labs(x = expression(beta[treatment]),
+       y = NULL) +
+  theme(axis.ticks.y = element_blank())
+```
+
+Now make the coef plot for the primary contrasts of interests
+```{r}
+post %>% 
+  mutate(db13 = b_b_treatment1 - b_b_treatment3,
+         db24 = b_b_treatment2 - b_b_treatment4) %>% 
+  pivot_longer(db13:db24) %>% 
+  mutate(diffs = factor(name, levels = c("db24", "db13"))) %>% 
+  
+  ggplot(aes(x = value, y = diffs)) +
+  geom_vline(xintercept = 0,
+             color = wes_palette("Moonrise2")[2],
+             linetype = 3) +
+  stat_pointinterval(.width = .95, size = 1/2,
+                     color = wes_palette("Moonrise2")[4]) +
+  labs(x = "difference",
+       y = NULL) +
+  theme(axis.ticks.y = element_blank())
+```
+
+```{r}
+d %>% 
+  group_by(actor, treatment) %>% 
+  summarise(proportion = mean(pulled_left)) %>% 
+  filter(actor == 1)
+```
+
+Now we'll make the top panel of Figure 11.4. Instead of showing the plot, we'll save it for the next code block.
+```{r}
+p1 <-
+  d %>% 
+  group_by(actor, treatment) %>% 
+  summarise(proportion = mean(pulled_left)) %>% 
+  left_join(d %>% distinct(actor, treatment, labels, condition, prosoc_left),
+            by = c("actor", "treatment")) %>% 
+  mutate(condition = factor(condition)) %>% 
+  
+  ggplot(aes(x = labels, y = proportion)) +
+  geom_hline(yintercept = .5,
+             color = wes_palette("Moonrise2")[3]) +
+  geom_line(aes(group = prosoc_left),
+            linewidth = 1/4,
+            color = wes_palette("Moonrise2")[4]) +
+  geom_point(aes(color = condition),
+             size = 2.5, show.legend = F) +
+  labs(subtitle = "observed proportions")
+```
+
+Next we use brms() fitted to get the posterior predictive distributions for each unique combination of actor and treatment, warngle, and plot. First, we save the plot as p2 and then we use ptachwork syntax to combine the two subplots.
+```{r}
+nd <-
+  d %>% 
+  distinct(actor, treatment, labels, condition, prosoc_left)
+
+p2 <-
+  fitted(b11.4,
+         newdata = nd) %>% 
+  data.frame() %>% 
+  bind_cols(nd) %>% 
+  mutate(condition = factor(condition)) %>% 
+  
+  ggplot(aes(x = labels, y = Estimate, ymin = Q2.5, ymax = Q97.5)) +
+  geom_hline(yintercept = .5, 
+             color = wes_palette("Moonrise2")[3]) +
+  geom_line(aes(group = prosoc_left),
+            linewidth = 1/4, color = wes_palette("Moonrise2")[4]) +
+  geom_pointrange(aes(color = condition),
+                  fatten = 2.5, show.legend = F) +
+  labs(subtitle = "posterior predictions")
+
+# combine the two ggplots
+library(patchwork)
+
+(p1 / p2) &
+  scale_color_manual(values = wes_palette("Moonrise2")[c(2:1)]) &
+  scale_y_continuous("proportion left lever",
+                     breaks = c(0, .5, 1), limits = c(0, 1)) &
+  xlab(NULL) &
+         theme(axis.ticks.x = element_blank(),
+               panel.background = element_rect(
+                 fill = alpha("white", 1/10),
+                 linewidth = 0)) &
+  facet_wrap(~ actor, nrow = 1, labeller = label_both)
+```
+Two more index variables
+```{r}
+d <-
+  d %>% 
+  mutate(side = factor(prosoc_left + 1), # right 1, left 2
+         cond = factor(condition + 1)) # no partner 1, partner 2
+```
+
+Now fit the model without the interaction between prosoc_left and condition
+```{r}
+b11.5 <-
+  brm(data = d,
+      family = binomial,
+      bf(pulled_left | trials(1) ~ a + bs + bc,
+         a ~ 0 + actor,
+         bs ~ 0 + side,
+         bc ~ 0 + cond,
+         nl = TRUE),
+      prior = c(prior(normal(0, 1.5), nlpar = a),
+                prior(normal(0, .5), nlpar = bs),
+                prior(normal(0, .5), nlpar = bc)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 11,
+      file = "fits/b11.05")
+```
+
+```{r}
+b11.4 <- add_criterion(b11.4, c("loo", "waic"))
+b11.5 <- add_criterion(b11.5, c("loo", "waic"))
+
+loo_compare(b11.4, b11.5, criterion = "loo") %>% 
+  print(simplify = F)
+```
+
+```{r}
+loo_compare(b11.4, b11.5, criterion = "waic") %>% 
+  print(simplify = F)
+```
+
+Here are the weights
+```{r}
+model_weights(b11.4, b11.5, weights = "loo") %>% round(digits = 2)
+```
+
+```{r}
+model_weights(b11.4, b11.5, weights = "waic") %>% round(digits = 2)
+```
+
+Here's a quick check of the parameter summary for the non-interaction model
+```{r}
+print(b11.5)
+```
+
+Here's the b11.5 version of the bottom panel of Figure 11.4
+```{r}
+nd <- 
+  d %>% 
+  distinct(actor, treatment, labels, cond, side)
+
+fitted(b11.5,
+       newdata = nd) %>% 
+  data.frame() %>% 
+  bind_cols(nd) %>% 
+  
+  ggplot(aes(x = labels, y = Estimate, ymin = Q2.5, ymax = Q97.5)) +
+  geom_hline(yintercept = .5, color = wes_palette("Moonrise2")[3]) +
+  geom_line(aes(group = side),
+            linewidth = 1/4, color = wes_palette("Moonrise2")[4]) +
+  geom_pointrange(aes(color = cond),
+                  fatten = 2.5, show.legend = F) + 
+  scale_color_manual(values = wes_palette("Moonrise2")[c(2:1)]) +
+  scale_y_continuous("proportion left lever", 
+                     breaks = c(0, .5, 1), limits = c(0, 1)) +
+  labs(subtitle = "posterior predictions for b11.5",
+       x = NULL) +
+  theme(axis.ticks.x = element_blank(),
+        panel.background = element_rect(fill = alpha("white", 1/10), linewidth = 0)) +
+  facet_wrap(~ actor, nrow = 1, labeller = label_both)
+```
+
