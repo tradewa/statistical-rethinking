@@ -1,0 +1,854 @@
+---
+title: "Chapter 11 Practice BRMS"
+format: html
+---
+```{r}
+library(tidyverse)
+library(brms)
+library(rethinking)
+library(tidybayes)
+library(gghighlight)
+```
+
+**11E1.** If an event has probability 0.35, what are the log-odds of this event?
+$$
+\text{log}\frac{p}{1 - p}
+$$
+
+```{r}
+log(0.35 / (1 - 0.35))
+```
+
+**11E2.** If an event has log-odds 3.2, what is the probability of this event?
+$$
+p = \frac{exp(\alpha)}{exp(\alpha) + 1}
+$$
+
+```{r}
+exp(3.2) / (exp(3.2) + 1)
+```
+
+**11E3.** Suppose that a coefficient in a logistic regression has value 1.7. What does this imply about the proportional change in odds of the outcome?
+
+Logistic regression formula is
+$$
+\text{log} \frac{p}{1 - p} = \alpha + \beta_{1}x
+$$
+
+And we can change the log-odds in the left to odds
+$$
+\frac{p}{1 - p} = e^{\alpha + \beta_{1}x}
+$$
+
+One unit of change in x can be described as
+$$
+\begin{align}
+\frac{p(x + 1)}{1 - p(x + 1)} & = e^{\alpha + \beta(x + 1)} \\
+& = e^{\alpha + \beta_{1}x} \cdot e^{\beta_{1}}
+\end{align}
+$$
+
+This shows that the odds are multiplied by $e^{\beta_{1}}$ for every unit increase in x.
+
+```{r}
+exp(1.7)
+```
+
+**11E4.** Why do Poisson regressions sometimes require the use of an offset? Provide an example.
+
+An offset is the duration that a count was accumulated during. If all of the observations were accumulated during the same observation periods, then an offset is not needed. However, if there are differences (e.g., some counts are weekly while others are daily), an offset is needed.
+
+As an example, say you were modeling how many houses Realtor sells. If some Realtors provide you data with weekly counts of houses sold, and some provide monthly data, you will need an offset to account for the fact that we expect larget counts from longer periods of time.
+
+**11M1.** As explained in the chapter, binomial data can be organized in aggregated and disaggregated forms, without any impact on inference. But the likelihood of the data does change when the data are converted between the two formats. Can you explain why?
+
+The likelihood of the aggregated binomial includes a multiplicative term to account for all the different ways that we could get the observed number of counts. For example, say we sat 2 success in 5 trials. In aggregated form, the likelihood hood is:
+$$
+\frac{5!}{2!(5 - 2)!}p^2(1 - p)^{5 - 2}
+$$
+
+The fraction out front is the multiplicative term, accounting for all the ways we could see 2 successes out of five trials. In the long disaggregated format, the likelihood would only be
+$$
+p^2(1 - p)^{5 - 2}
+$$
+
+This is because we know exactly how we got 2 out of 5 from the series of 1s and 0s. Because there is no multiplicative factor the likelihoods will be different. However, because that multiplicative factor is not a function of p, the posterior distributions, and therefore the inferences, are unaffected.
+
+**11M2.** If a coefficient in a Poisson regression has value 1.7, what does this imply about the change in the outcome?
+
+**11M3.** Explain why the logit link is appropriate for a binomial generalized linear model.
+
+Because binomial GLM models count or 1/0 so that logit link is suitable.
+
+**11M4.** Explain why the log link is appropriate for a Poisson generalized linear model
+
+We need a function that maps the continuous linear model to a strictly positive space. The log link accomplishes this. The inverse of the log link is the exponential, and any value that is exponentiated will be positive.
+
+**11M5.** What would it imply to use a logit link for the mean of a Poisson generalized linear model? Can you think of a real research problem for which this would make sense?
+
+A logit link would imply a model with a known maximum count. Normally, this value is 1, but it could be any arbitrary number such as, where M is the maximum count:
+$$
+\begin{align}
+y_{i} & \sim \text{Poisson}(\mu_{i}) \\
+\text{log} \frac{\mu_{i}}{M - \mu_{i}} & = \alpha + \beta x_{i}
+\end{align}
+$$
+
+Usually, if there is a known maximum, it makes more sense to use a binomial model. However, if M is very large such that you may never reach it, and the probability is low, this type of logit-Poisson could be used.
+
+**11M6.** State the constraints for which the binomial and Poisson distributions have maximum entropy. Are the constraints different at all for binomial and Poisson? Why or why not?
+
+Constraints for binomial are:
+1. The outcome of the event are restricted to two possibility: 1 or 0
+2. We know the maximum number of events
+
+Constraints for Poisson are:
+1. The outcome of the event are restricted to two possibility: 1 or 0
+2. The number of event are very large or success probability is very low
+
+**11M7.** Use quap to construct a quadratic approximate posterior distribution for the chimpanzee model that includes a unique intercept for each action, m11.4 (page 330). Compare the quadratic approximation to the posterior distribution produced instead from MCMC. Can you explain both the differences and the similarities between the approximate and the MCMC distributions? Relax the prior on the actor intercepts to Normal(0, 10). Re-estimate the posterior using both ulam and quap. Do the difference increase or decrease? Why?
+```{r}
+library(tidyverse)
+
+data(chimpanzees, package = "rethinking")
+
+chimp_dat <- 
+  chimpanzees %>% 
+  mutate(
+    treatment = 1 + prosoc_left + 2 * condition,
+    treatment = factor(treatment),
+    actor = factor(actor))
+
+rm(chimpanzees)
+```
+
+```{r}
+# trimmed data list
+dat_list <- list(
+  pulled_left = chimp_dat$pulled_left,
+  actor = as.integer(chimp_dat$actor),
+  treatment = as.integer(chimp_dat$treatment))
+```
+
+
+```{r}
+q11m7 <- quap(
+  alist(
+    pulled_left ~ dbinom(1, p),
+    logit(p) <- a[actor] + b[treatment],
+    a[actor] ~ dnorm(0, 1.5),
+    b[treatment] ~ dnorm(0, 0.5)
+  ), data = dat_list)
+
+precis(q11m7, depth = 2)
+```
+```{r}
+b11m7 <-
+  brm(data = chimp_dat,
+      family = binomial,
+      bf(pulled_left | trials(1) ~ a + b,
+         a ~ 0 + actor,
+         b ~ 0 + treatment,
+         nl = TRUE),
+      prior = c(prior(normal(0, 1.5), nlpar = a),
+                prior(normal(0, 0.5), nlpar = b)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b11m7")
+```
+
+```{r}
+q_samp <- extract.samples(q11m7)
+
+q_draws <-
+  bind_cols(
+    q_samp$a %>% 
+      as_tibble(.name_repair = ~paste0("b_a_actor", 1:ncol(q_samp$a))) %>% 
+      slice_sample(n = 8000) %>% 
+      rowid_to_column(var = ".draw"),
+    q_samp$b %>% 
+      as_tibble(.name_repair = ~paste0("b_b_treatment", 1:ncol(q_samp$b))) %>% 
+      slice_sample(n = 8000)
+  ) %>% 
+  pivot_longer(-.draw, names_to = "parameter", values_to = "QUAP")
+```
+
+```{r}
+b_draws <- 
+  as_draws_df(b11m7) %>% 
+  as_tibble() %>% 
+  select(-lp__) %>% 
+  pivot_longer(cols = -c(.chain, .iteration, .draw),
+               names_to = "parameter", values_to = "MCMC")
+```
+
+```{r}
+post_comp <- full_join(b_draws, q_draws, by = c(".draw", "parameter")) %>% 
+  pivot_longer(cols = c(MCMC, QUAP), names_to = "type") %>% 
+  mutate(parameter = str_replace_all(parameter, "b_[a|b]_([a-z]*)([0-9])",
+                                     "\\1 \\2"),
+         parameter = str_to_title(parameter))
+
+post_comp %>% 
+  ggplot(aes(x = value, color = type)) +
+  facet_wrap(~parameter, nrow = 3) +
+  geom_density(key_glyph = "timeseries") +
+  labs(x = "Value", y = "Density", color = NULL) +
+  scale_x_continuous(limits = c(-2.5, 7.5)) +
+  theme_minimal()
+```
+
+```{r}
+post_comp %>% 
+  filter(parameter == "Actor 2") %>% 
+  ggplot(aes(x = value, color = type)) +
+  geom_density(key_glyph = "timeseries") +
+  labs(x = "Actor 2", y = "Density", color = NULL) +
+  scale_x_continuous(limits = c(1, 7)) +
+  theme_minimal()
+```
+
+Now let's modify our prior distributions
+```{r}
+q11m7_wide <-
+  quap(
+    alist(
+    pulled_left ~ dbinom(1, p),
+    logit(p) <- a[actor] + b[treatment],
+    a[actor] ~ dnorm(0, 10),
+    b[treatment] ~ dnorm(0, 0.5)
+  ), data = dat_list)
+
+b11m7_wide <-
+  brm(data = chimp_dat,
+      family = bernoulli,
+      bf(pulled_left ~ a + b,
+         a ~ 0 + actor,
+         b ~ 0 + treatment,
+         nl = TRUE),
+      prior = c(prior(normal(0, 10), nlpar = a),
+                prior(normal(0, .5), nlpar = b)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b11m7_wide"
+  )
+```
+```{r}
+q_samp <- extract.samples(q11m7_wide)
+
+q_draws <-
+  bind_cols(
+    q_samp$a %>% 
+      as_tibble(.name_repair = ~paste0("b_a_actor", 1:ncol(q_samp$a))) %>% 
+      slice_sample(n = 8000) %>% 
+      rowid_to_column(var = ".draw"),
+    q_samp$b %>% 
+      as_tibble(.name_repair = ~paste0("b_b_treatment", 1:ncol(q_samp$b))) %>% 
+      slice_sample(n = 8000)
+  ) %>% 
+  pivot_longer(-.draw, names_to = "parameter", values_to = "QUAP")
+
+b_draws <- 
+  as_draws_df(b11m7_wide) %>% 
+  as_tibble() %>% 
+  select(-lp__) %>% 
+  pivot_longer(cols = -c(.chain, .iteration, .draw),
+               names_to = "parameter", values_to = "MCMC")
+
+post_comp <- full_join(b_draws, q_draws, by = c(".draw", "parameter")) %>% 
+  pivot_longer(cols = c(MCMC, QUAP), names_to = "type") %>% 
+  mutate(parameter = str_replace_all(parameter, "b_[a|b]_([a-z]*)([0-9])",
+                                     "\\1 \\2"),
+         parameter = str_to_title(parameter))
+
+post_comp %>% 
+  filter(parameter == "Actor 2") %>% 
+  ggplot(aes(x = value, color = type)) +
+  geom_density(key_glyph = "timeseries") +
+  labs(x = "Actor 2", y = "Density", color = NULL) +
+  scale_x_continuous(limits = c(-5, 40)) +
+  theme_minimal()
+```
+
+```{r}
+data("Kline", package = "rethinking")
+
+kline_dat <- Kline
+
+rm(Kline)
+
+kline_dat <-
+  kline_dat %>% 
+  mutate(P = standardize(log(population)))
+
+kline_dat_no_hawaii <-
+  filter(kline_dat, culture != "Hawaii")
+```
+
+Create model by including all data including Hawaii
+```{r}
+b11m8_hawaii <-
+  brm(data = kline_dat,
+      family = poisson,
+      bf(total_tools ~ a + b * P,
+         a ~ 0 + contact,
+         b ~ 0 + contact,
+         nl = TRUE),
+      prior = c(prior(normal(3, 0.5), class = b, nlpar = a),
+                prior(normal(0, 0.2), class = b, nlpar = b)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b11m8_hawaii")
+
+b11m8_no_hawaii <-
+  brm(data = kline_dat_no_hawaii,
+      family = poisson,
+      bf(total_tools ~ a + b * P,
+         a ~ 0 + contact,
+         b ~ 0 + contact,
+         nl = TRUE),
+      prior = c(prior(normal(3, 0.5), class = b, nlpar = a),
+                prior(normal(0, 0.2), class = b, nlpar = b)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b11m8_no_hawaii")
+```
+
+```{r}
+summary(b11m8_hawaii)
+```
+
+```{r}
+summary(b11m8_no_hawaii)
+```
+
+```{r}
+b11m8_hawaii_draws <- 
+  as_draws_df(b11m8_hawaii) %>% 
+  as_tibble() %>% 
+  select(-c(lp__, .iteration, .chain, lprior)) %>% 
+  pivot_longer(cols = -.draw, names_to = "parameter", values_to = "With hawaii")
+
+b11m8_no_hawaii_draws <- 
+  as_draws_df(b11m8_no_hawaii) %>% 
+  as_tibble() %>% 
+  select(-c(lp__, .iteration, .chain, lprior)) %>% 
+  pivot_longer(cols = -.draw, names_to = "parameter", values_to = "No hawaii")
+
+b11m8_comp <-
+  full_join(b11m8_hawaii_draws, b11m8_no_hawaii_draws, by = c(".draw", "parameter")) %>% 
+  pivot_longer(cols = c("With hawaii", "No hawaii"), names_to = "observations")
+```
+
+```{r}
+b11m8_comp %>% 
+  ggplot(aes(x = value, colour = observations)) +
+  geom_density() +
+  facet_wrap(~parameter) +
+  scale_x_continuous(limits = c(-0.5, 5))
+```
+
+**11H1.** Use WAIC or PSIS to compare the chimpanzee model that includes a unique intercept for each actor, m11.4 (page 330), to the simpler models fit in the same section. Interpret the results.
+```{r}
+data("chimpanzees", package = "rethinking")
+
+chimp_dat <- chimpanzees %>% 
+  mutate(treatment = 1 + prosoc_left + 2 * condition,
+         treatment = factor(treatment),
+         actor = factor(actor))
+```
+
+```{r}
+b11h1_a <-
+  brm(data = chimp_dat,
+      family = bernoulli,
+      bf(pulled_left ~ a,
+         a ~ 1,
+         nl = TRUE),
+      prior = c(prior(normal(0, 10), class = b, nlpar = a)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b11h1_a")
+
+b11h1_b <-
+  brm(data = chimp_dat,
+      family = bernoulli,
+      bf(
+        pulled_left ~ a + b,
+        a ~ 1,
+        b ~ 0 + treatment,
+        nl = TRUE),
+      prior = c(prior(normal(0, 1.5), class = b, nlpar = a),
+                prior(normal(0, 10), class = b, nlpar = b)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b11h1_b")
+
+b11h1_c <-
+  brm(data = chimp_dat,
+      family = bernoulli,
+      bf(
+        pulled_left ~ a + b,
+        a ~ 1,
+        b ~ 0 + treatment,
+        nl = TRUE),
+      prior = c(prior(normal(0, 1.5), class = b, nlpar = a),
+                prior(normal(0, 0.5), class = b, nlpar = b)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b11h1_c")
+
+b11h1_d <-
+  brm(data = chimp_dat,
+      family = bernoulli,
+      bf(pulled_left ~ a + b,
+         a ~ 0 + actor,
+         b ~ 0 + treatment,
+         nl = TRUE),
+      prior = c(prior(normal(0, 1.5), class = b, nlpar = a),
+                prior(normal(0, 0.5), class = b, nlpar = b)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b11h1_d")
+```
+
+```{r}
+b11h1_a <- add_criterion(b11h1_a, criterion = "loo")
+b11h1_b <- add_criterion(b11h1_b, criterion = "loo")
+b11h1_c <- add_criterion(b11h1_c, criterion = "loo")
+b11h1_d <- add_criterion(b11h1_d, criterion = "loo")
+
+loo_compare(b11h1_a, b11h1_b, b11h1_c, b11h1_d)
+```
+
+The comparison shows pretty strong support for b11.4, which is the model with actor intercepts. Based on what we learned in the chapter, this makes sense. Most of the variation was across individual chipanzees, rather than across treatments. Thus, adding actor information provides much better predictions.
+
+**11H2.** The data contained in ```library(MASS);data(eagles)``` are records of salmon pirating attempts by Bald Eagles in Washington State. See ?eagles for details. While one eagle feeds, sometime another will swoop in and try to steal the salmon from it. Call the feeding eagle the “victim” and the thief the “pirate.” Use the available data to build a binomial GLM of successful pirating attempts.
+
+a. Consider the following model:
+$$
+\begin{align}
+y_{i} & \sim \text{Binomial}(n_{i}, p_{i}) \\
+\text{logit}(p_{i}) & = \alpha + \beta_{P}P_{i} + \beta_{V}V_{i} + \beta_{A}A_{i} \\
+\alpha & \sim \text{Normal}(0, 1.5) \\
+\beta_{P}, \beta_{V}, \beta_{A} & \sim \text{Normal}(0, 0.5)
+\end{align}
+$$
+
+where $y$ is the number of succesful attempts, $n$ is the total number of attempts, $P$ is a dummy variable indicating whether or not the pirate had large body size, $V$ is a dummy variable indicating whether or not the victim had large body size, and finally $A$ is a dummy variable indicating whether or not the pirate was an adult. Fit the model above to the eagles data, using both quap and ulam. Is the quadratic approximation okay?
+
+```{r}
+data(eagles, package = "MASS")
+
+eagle_dat <-
+  eagles %>% 
+  mutate(
+    pirateL = ifelse(P == "L", 1, 0),
+    victimL = ifelse(V == "L", 1, 0),
+    pirateA = ifelse(A == "A", 1, 0),)
+
+rm(eagles)
+```
+
+
+```{r}
+b11h2_quap <-
+  quap(
+    alist(
+      y ~ dbinom(n, p),
+      logit(p) <- a + bP * pirateL + bV * victimL + bA * pirateA,
+      a ~ dnorm(0, 1.5),
+      bP ~ dnorm(0, 1),
+      bV ~ dnorm(0, 1),
+      bA ~ dnorm(0, 1)),
+    data = eagle_dat)
+
+b11h2_brm <-
+  brm(data = eagle_dat,
+      family = binomial,
+      y | trials(n) ~ 1 + pirateL + victimL + pirateA,
+      prior = c(prior(normal(0, 1.5), class = Intercept),
+                prior(normal(0, 1), class = b)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b11h2_brm")
+```
+
+```{r}
+precis(b11h2_quap)
+
+fixef(b11h2_brm, probs = c(.055, .945))
+```
+
+b. Now interpret the estimates. If the quadratic approximation turned out okay, then it’s okay to use the quap estimates. Otherwise stick to ulam estimates. Then plot the posterior predictions. Compute and display both (1) the predicted probability of success and its 89% interval for each row (i) in the data, as well as (2) the predicted success count and its 89% interval. What different information does each type of posterior prediction provide?
+
+Predicted probability of success can be derived from this equation
+$$
+\begin{align}
+\text{logit}(p_{i}) & = \alpha + \beta_{P}P_{i} + \beta_{V}V_{i} + \beta_{A}A_{i} \\
+p_{i} & = \frac{1}{1 + e^{-(\alpha + \beta_{P}P_{i} + \beta_{V}V_{i} + \beta_{A}A_{i})}}
+\end{align}
+$$
+
+
+```{r}
+eagle_dat %>% 
+  add_linpred_draws(b11h2_brm) %>% 
+  mutate(prob = inv_logit_scaled(.linpred),
+         label = paste0(P, A, V)) %>% 
+  ggplot(aes(x = label, y = prob)) +
+  stat_pointinterval(aes(color = "Posterior"),
+                     width = 0.89, size = 5) +
+  geom_point(data = eagle_dat, size = 2,
+             aes(x = paste0(P, A, V), y = y/n,
+                 color = "Observed")) +
+  scale_color_manual(values = c("Posterior" = "#009FB7",
+                                "Observed" = "#272727"),
+                     name = NULL) +
+  labs(x = "Case", y = "Successes") +
+  theme_minimal()
+
+eagle_dat %>% 
+  add_epred_draws(b11h2_brm) %>% 
+  mutate(label = paste0(P, A, V)) %>% 
+  ggplot(aes(x = label, y = .epred)) +
+  stat_pointinterval(aes(color = "Posterior"), 
+                     width = 0.89, size = 5) +
+  geom_point(data = eagle_dat, size = 2,
+             aes(x = paste0(P, A, V), y = y, 
+                 color = "Observed")) +
+  scale_color_manual(values = c("Posterior" = "#009FB7",
+                                "Observed" = "#272727"),
+                     name = NULL) +
+  labs(x = "Case", y = "Successes") +
+  theme_minimal()
+```
+
+c. Now try to improve the model. Consider an interaction between the pirate's size and age (immature or adult). Compare this model to the previous one, using WAIC. Interpret
+```{r}
+b11h2_brm_2 <-
+  brm(data = eagle_dat,
+      family = binomial,
+      y | trials(n) ~ 1 + pirateL * pirateA + victimL,
+      prior = c(prior(normal(0, 1.5), class = Intercept),
+                prior(normal(0, 1), class = b)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b11h2_brm_2")
+```
+
+```{r}
+b11h2_brm <- add_criterion(b11h2_brm, criterion = "waic")
+b11h2_brm_2 <- add_criterion(b11h2_brm_2, criterion = "waic")
+
+loo_compare(b11h2_brm, b11h2_brm_2, criterion = "waic")
+```
+
+**11H3.** The data contained in ```data(salamanders)``` are counts of salamanders (Plethodon elongatus) from 47 different 49-m2 plots in northern California. The column ```SALAMAN``` is the count in each plot, and the columns ```PCTCOVER``` and ```FORESTAGE``` are percent of ground cover and age of trees in the plot, respectively. You will model ```SALAMAN``` as a Poisson variable.
+
+a. Model the relationship between density and percent cover, using a log-link (same as the example in the book and lecture). Use weakly informative priors of your choosing. Check the quadratic approximation again, by comparing ```quap``` to ```ulam```. Then plot the expected counts and their 89% interval against percent cover. In which ways does the model do a good job? A bad job?
+```{r}
+data("salamanders")
+
+salamander_dat <-
+  salamanders%>% 
+  mutate(cov = standardize(PCTCOVER),
+         age = standardize(FORESTAGE))
+
+rm(salamanders)
+```
+
+```{r}
+b11h3_quap <-
+  quap(
+    alist(
+      SALAMAN ~ dpois(lambda),
+      log(lambda) <- a + bC * cov,
+      a ~ dnorm(0, 1),
+      bC ~ dnorm(0, 0.5)),
+    data = salamander_dat)
+
+b11h3_brm <-
+  brm(data = salamander_dat,
+      family = poisson,
+      SALAMAN ~ 1 + cov,
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 0.5), class = b)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b11h3_brm")
+```
+
+```{r}
+precis(b11h3_quap)
+
+fixef(b11h3_brm)
+```
+Plot the expected count
+```{r}
+set.seed(219)
+
+epreds <-
+  tibble(cov = seq(-2, 1.5, by = 0.05)) %>% 
+  add_epred_draws(b11h3_brm)
+
+preds <-
+  tibble(cov = seq(-2, 1.5, by = 0.01)) %>% 
+  add_predicted_draws(b11h3_brm)
+
+ggplot() +
+  stat_lineribbon(data = preds,
+                  aes(x = cov, y = .prediction,
+                      fill = "Prediction (89%)"),
+                  .width = c(0.89), size = 0) +
+  stat_lineribbon(data = epreds,
+                  aes(x = cov, y = .epred),
+                  .width = c(0.67, 0.89, 0.97), size = 0.5) +
+  geom_point(data = salamander_dat, 
+             aes(x = cov, y = SALAMAN)) +
+  labs(x = "Ground cover (standardized)", y = "Observed Salamanders", fill = "Interval") +
+  theme_minimal()
+  
+```
+
+```{r}
+b11h3_brm_2 <-
+  brm(data = salamander_dat,
+      family = poisson,
+      SALAMAN ~ 1 + cov + age,
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 0.5), class = b)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b11h3_brm_2"
+  )
+
+fixef(b11h3_brm_2)
+```
+
+**11H4.** The data in ```data(NWOGrants)``` are outcomes for scientific funding applications for the Netherlands Organization for Scientific Research (NWO) from 2010–2012 (see van der Lee & Ellemers, 2015, for data and context). These data have a very similar structure to the UCBAdmit data discussed in the chapter. I want you to consider a similar question: What are the total and direct causal effects of gender on grant awards? Consider a mediation path (a pipe) through discipline. Draw the corresponding DAG and then use one or more binomial GLMs to answer the question. What is your causal interpretation? If NWO’s goal is to equalize rates of funding between men and women, what type of intervention would be most effective?
+
+
+```{r}
+data("NWOGrants", package = "rethinking")
+
+nwo_dat <-
+  NWOGrants %>% 
+  mutate(gender = factor(gender, levels = c("m", "f")))
+
+rm(NWOGrants)
+```
+
+```{r}
+b11h4_total <-
+  brm(data = nwo_dat,
+      family = binomial,
+      awards | trials(applications) ~ 0 + gender,
+      prior = prior(normal(0, 1.5), class = b),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b11h4_total")
+
+b11h4_direct <-
+  brm(data = nwo_dat,
+      family = binomial,
+      bf(awards | trials(applications) ~ g + d + i,
+         g ~ 0 + gender,
+         d ~ 0 + discipline,
+         i ~ 0 + gender:discipline,
+         nl = TRUE),
+      prior = c(prior(normal(0, 1.5), class = b, nlpar = g),
+                prior(normal(0, 1.5), class = b, nlpar = d),
+                prior(normal(0, 1.5), class = b, nlpar = i)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b11h4_direct")
+```
+```{r}
+fixef(b11h4_total)
+```
+
+
+```{r}
+as_draws_df(b11h4_total) %>% 
+  mutate(diff_male = inv_logit_scaled(b_genderm) -
+           inv_logit_scaled(b_genderf)) %>% 
+  ggplot(aes(x = diff_male)) +
+  stat_halfeye(.width = c(0.67, 0.89, 0.97), fill = "#009fb7") +
+  labs(x = "beta_m - beta_f",
+       y = "Density") +
+  theme_minimal()
+```
+
+```{r}
+apps_per_dept <- nwo_dat %>% 
+  group_by(discipline) %>% 
+  summarize(applications = sum(applications))
+
+# simulate as if all applications are from males
+male_dat <- apps_per_dept %>% 
+  mutate(gender = "m") %>% 
+  uncount(applications) %>% 
+  mutate(applications = 1L)
+
+# simulate as if all applications are from females
+female_dat <- apps_per_dept %>% 
+  mutate(gender = "f") %>% 
+  uncount(applications) %>% 
+  mutate(applications = 1L)
+
+marg_eff <- 
+  bind_rows(add_epred_draws(male_dat, b11h4_direct),
+            add_epred_draws(female_dat, b11h4_direct)) %>% 
+  pivot_wider(names_from = "gender", 
+              values_from = ".epred") %>% 
+  mutate(diff = m - f)
+
+ggplot(marg_eff, aes(x = diff)) +
+  stat_halfeye(.width = c(0.67, 0.89, 0.97), fill = "#009FB7") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  labs(x = "Difference in Awards (Male - Female)",
+       y = "Density") +
+  theme_minimal()
+```
+
+**11H5.** Suppose that the NWO Grants sample has an unobserved confound that influences both choice of discipline and the probability of an award. One example of such a confound could be the career stage of each applicant. Suppose that in some disciplines, junior scholars apply for most of the grants. In other disciplines, scholars from all career stages compete. As a result, career stage influences discipline as well as the probability of being awarded a grant. Add these influences to your DAG from the previous problem. What happens now when you condition on discipline? Does it provide an un-confounded estimate of the direct path from gender to an award? Why or why not? Justify your answer with the backdoor criterion. If you have trouble thinking this though, try simulating fake data, assuming your DAG is true. Then analyze it using the model from the previous problem. What do you conclude? Is it possible for gender to have a real direct causal influence but for a regression conditioning on both gender and discipline to suggest zero influence?
+```{r}
+n <- 1000
+g <- rbernoulli(n, p = 0.5)
+s <- rbernoulli(n, p = 0.5)
+d <- rbernoulli(n, p = inv_logit_scaled(2 * g - s))
+a <- rbernoulli(n, p = inv_logit_scaled(0 * g + d + s - 2)) 
+
+dat <-
+  tibble(g, d, a) %>% 
+  mutate(across(everything(), as.integer),
+         across(everything(), as.factor))
+```
+
+```{r}
+mod <-
+  brm(data = dat,
+      family = bernoulli,
+      a ~ 1 + d + g,
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b11h5-sim"
+      )
+```
+```{r}
+as_draws_df(mod, variable = "b_g1") %>% 
+  mean_hdi(b_g1, .width = 0.89)
+```
+
+**11H6.** The data in data(Primates301) are 301 primate species and associated measures. In this problem, you will consider how brain size is associated with social learning. There are three parts.
+
+a. Model the number of observations of social_learning for each species as a function of the log brain size. Use a Poisson distribution for the social_learning outcome variable. Interpret the resulting posterior.
+
+```{r}
+data(Primates301, package = "rethinking")
+
+primate_dat <-
+  Primates301 %>% 
+  select(social_learning, genus, species, brain, research_effort) %>% 
+  drop_na(everything()) %>% 
+  mutate(log_brain = standardize(log(brain)),
+         log_effort = log(research_effort)) %>% 
+  rowid_to_column()
+```
+
+```{r}
+b11h6a <-
+  brm(data = primate_dat,
+      family = poisson,
+      social_learning ~ 1 + log_brain,
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 0.5), class = b)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b11h6a")
+```
+
+```{r}
+summary(b11h6a)
+```
+
+```{r}
+preds <-
+  primate_dat %>% 
+  add_predicted_draws(b11h6a)
+
+preds %>% 
+  filter(rowid %in% 1:50) %>% 
+  ggplot(aes(x = rowid)) +
+  stat_pointinterval(aes(y = .prediction, color = "Posterior"), .width = 0.89) +
+  geom_point(data = filter(primate_dat, rowid %in% 1:50),
+             aes(y = social_learning, color = "Observed")) +
+  scale_color_manual(values = c("Posterior" = "#272727",
+                                "Observed" = "#009FB7")) +
+  expand_limits(y = c(0, 200)) +
+  labs(x = "Case", y = "Social Learning", color = NULL)
+
+preds %>% 
+  filter(rowid %in% 51:100) %>% 
+  ggplot(aes(x = rowid)) +
+  stat_pointinterval(aes(y = .prediction, color = "Posterior"), .width = 0.89) +
+  geom_point(data = filter(primate_dat, rowid %in% 51:100),
+             aes(y = social_learning, color = "Observed")) +
+  scale_color_manual(values = c("Posterior" = "#272727",
+                                "Observed" = "#009FB7")) +
+  expand_limits(y = c(0, 200)) +
+  labs(x = "Case", y = "Social Learning", color = NULL)
+
+preds %>% 
+  filter(rowid %in% 101:150) %>% 
+  ggplot(aes(x = rowid)) +
+  stat_pointinterval(aes(y = .prediction, color = "Posterior"), .width = 0.89) +
+  geom_point(data = filter(primate_dat, rowid %in% 101:150),
+             aes(y = social_learning, color = "Observed")) +
+  scale_color_manual(values = c("Posterior" = "#272727",
+                                "Observed" = "#009FB7")) +
+  expand_limits(y = c(0, 200)) +
+  labs(x = "Case", y = "Social Learning", color = NULL)
+```
+
+b. Some species are studied much more than others. So the number of reported instances of social_learning could be a product of research effort. Use the research_effort variable, specifically its logarithm, as an additional predictor variable. Interpret the coefficient for log research_effort. How does this model differ from the previous one?
+```{r}
+b11h6b <-
+  brm(data = primate_dat,
+      family = poisson,
+      social_learning ~ 1 + log_brain + log_effort,
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 0.5), class = b)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b11h6b")
+```
+
+```{r}
+summary(b11h6b)
+```
+
+```{r}
+b11h6a <- add_criterion(b11h6a, criterion = "loo")
+b11h6b <- add_criterion(b11h6b, criterion = "loo")
+
+set.seed(220)
+
+bind_cols(
+  primate_dat,
+  as_tibble(b11h6a$criteria$loo$pointwise) %>% 
+    select(loo1 = elpd_loo),
+  as_tibble(b11h6b$criteria$loo$pointwise) %>% 
+    select(loo2 = elpd_loo)
+) %>% 
+  mutate(diff = loo2 - loo1) %>% 
+  ggplot(aes(x = diff, y = log_effort)) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_point() +
+  gghighlight(n = 1, diff > 15, label_key = genus,
+              max_highlight = 10)
+```
+

@@ -265,11 +265,11 @@ d <-
 ```
 
 ```{r}
-b11.4 <-
-  brm(data = d,
+b11.4 <- 
+  brm(data = d, 
       family = binomial,
       bf(pulled_left | trials(1) ~ a + b,
-         a ~ 0 + actor,
+         a ~ 0 + actor, 
          b ~ 0 + treatment,
          nl = TRUE),
       prior = c(prior(normal(0, 1.5), nlpar = a),
@@ -490,5 +490,1686 @@ fitted(b11.5,
   theme(axis.ticks.x = element_blank(),
         panel.background = element_rect(fill = alpha("white", 1/10), linewidth = 0)) +
   facet_wrap(~ actor, nrow = 1, labeller = label_both)
+```
+
+#### 11.1.1.1 Overthinking: Adding log-probability calculations to a Stan model.
+```{r}
+log_lik(b11.5) %>% str()
+```
+
+### 11.1.2 Relative shark and absolute deer.
+```{r}
+as_draws_df(b11.4) %>% 
+  mutate(proportional_odds = exp(b_b_treatment4 - b_b_treatment2)) %>% 
+  mean_qi(proportional_odds)
+```
+
+Consider for example a rare disease which occurs in 1 per 10-million people. Suppose also that reading this textbook increased the odds of the disease 5-fold. That would mean approximately 4 more cases of the disease per 10-million people. So only 5-in-10-million chance now. The book is safe.
+```{r}
+tibble(disease_rate = 1/1e7,
+       fold_increase = 5) %>% 
+  mutate(new_disease_rate = disease_rate * fold_increase)
+```
+
+The hard part, though, is that “neither absolute nor relative risk is sufficient for all purposes” (p. 337). Each provides its own unique perspective on the data. Again, welcome to applied statistics.
+
+### 11.1.3 Aggregated binomial: Chimpanzees again, condensed.
+```{r}
+d_aggregated <-
+  d %>% 
+  group_by(treatment, actor, side, cond) %>% 
+  summarise(left_pulls = sum(pulled_left)) %>% 
+  ungroup()
+
+d_aggregated %>% 
+  head(n = 8)
+```
+
+To fit an aggregated binomial model with brms, we augment the <criterion> | trials() syntax where the value that goes in trials() is either a fixed number, as in this case, or variable in the data indexing n. Either way, at least some of those trials will have an n > 1. Here we'll use the hard-code method, just like McElreath did in the text.
+```{r}
+b11.6 <-
+  brm(data = d_aggregated,
+      family = binomial,
+      bf(left_pulls | trials(18) ~ a + b,
+         a ~ 0 + actor,
+         b ~ 0 + treatment,
+         nl = TRUE),
+      prior = c(prior(normal(0, 1.5), nlpar = a),
+                prior(normal(0, 0.5), nlpar = b)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 11,
+      file = "fits/b11.06")
+```
+
+```{r}
+print(b11.6)
+```
+
+It might be easiest to compare b11.4 and b11.6 with a coefficient plot
+```{r}
+# this is just for fancy annotation
+text <-
+  tibble(value = c(1.4, 2.6),
+         name  = "b_a_actor7",
+         fit   = c("b11.6", "b11.4"))
+
+# rope in the posterior draws and wrangle
+bind_rows(as_draws_df(b11.4),
+          as_draws_df(b11.6)) %>% 
+  mutate(fit = rep(c("b11.4", "b11.6"), each = n() / 2)) %>% 
+  pivot_longer(b_a_actor1:b_b_treatment4) %>% 
+  
+  # plot
+  ggplot(aes(x = value, y = name, color = fit)) +
+  stat_pointinterval(.width = .95, size = 2/3,
+                     position = position_dodge(width = 0.5)) +
+  scale_color_manual(values = wes_palette("Moonrise2")[2:1]) +
+  geom_text(data = text,
+            aes(label = fit),
+            family = "Times", position = position_dodge(width = 2.25)) +
+  labs(x = "posterior (log-odds scale)",
+       y = NULL) +
+  theme(axis.ticks.y = element_blank(),
+        legend.position = "none")
+```
+
+```{r}
+b11.4 <- add_criterion(b11.4, "loo")
+b11.6 <- add_criterion(b11.6, "loo")
+```
+
+```{r}
+# loo_compare(b11.4, b11.6, criterion = "loo") %>% print(simplify = F)
+```
+
+```{r}
+loo(b11.4)
+```
+
+```{r}
+loo(b11.6)
+```
+
+To understand what's going on, consider how you might describe six 1's out of nine trials in the aggregated form,
+$$
+\text{Pr}(6|9,p) = \frac{6!}{6!(9 - 6)!} p^{6} (1 - p)^{9-6}.
+$$
+
+If we still stick with the same data, but this time re-express those as nine dichotomous data points, we now describe their joint probability as
+$$
+\text{Pr}(1, 1, 1, 1, 1, 1, 0, 0, 0|p) = p^6 (1 - p)^{9 - 6}.
+$$
+
+Let's work this out in code
+```{r}
+# deviance of aggregated 6-in-9
+-2 * dbinom(6, size = 9, prob = 0.2, log = TRUE)
+```
+
+```{r}
+# deviance of dis-aggregated
+-2 * sum(dbinom(c(1, 1, 1, 1, 1, 1, 0, 0, 0), size = 1, prob = 0.2, log = TRUE))
+```
+
+This is what our coefficient plot showed us, above. The posterior distribution was the same within simulation variance for b11.4 and b11.6. Just like McElreath reported in the text, we also got a warning about high Pareto k values from the aggregated binomial model, b11.6. To access the message and its associated table directly, we can feed the results of loo() into the loo::pareto_k_table function.
+```{r}
+loo(b11.6) %>% loo::pareto_k_table()
+```
+
+### 11.1.4 Aggregated binomial: Graduate school admissions.
+```{r}
+data(UCBadmit, package = "rethinking")
+d <- UCBadmit
+rm(UCBadmit)
+
+d
+```
+
+Now compute our new index variable, gid. We'll also slip in a case variable that saves the row numbers as a factor. That'll come in handy later when we plot.
+```{r}
+d <-
+  d %>% 
+  mutate(gid = factor(applicant.gender, levels = c("male", "female")),
+         case = factor(1:n()))
+```
+
+The univariable logistic model with male as the sole predictor of admit follows the form
+$$
+\begin{align}
+\text{admit}_{i} & \sim \text{Binomial}(n_{i}, [_{i}]) \\
+\text{logit}(p_{i}) & = \alpha_{gid[i]} \\
+\alpha_{j} & \sim \text{Normal}(0, 1.5),
+\end{align}
+$$
+
+where $n_{i} = \text{applications}_{i}$, the rows are indexed by $i$, and the two levels of gid are indexed by $j$. Since we're only using our index variable gid to model two intercepts with no further complications, we don't need to use the verbose non-linear syntax to fit this model with brms.
+```{r}
+b11.7 <-
+  brm(data = d,
+      family = binomial,
+      admit | trials(applications) ~ 0 + gid,
+      prior(normal(0, 1.5), class = b),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 11,
+      file = "fits/b11.07")
+```
+
+```{r}
+print(b11.7)
+```
+
+We'll compute the difference score in two metrics and summarize them with a little help from ```mean_qi()```.
+```{r}
+as_draws_df(b11.7) %>% 
+  mutate(diff_a = b_gidmale - b_gidfemale,
+         diff_p = inv_logit_scaled(b_gidmale) - inv_logit_scaled(b_gidfemale)) %>% 
+  pivot_longer(contains("diff")) %>% 
+  group_by(name) %>% 
+  mean_qi(value, .width = .89)
+```
+
+```{r}
+p <-
+  predict(b11.7) %>% 
+  data.frame() %>% 
+  bind_cols(d)
+
+text <-
+  d %>% 
+  group_by(dept) %>% 
+  summarise(case = mean(as.numeric(case)),
+            admit = mean(admit / applications) + .05)
+
+p %>% 
+  ggplot(aes(x = case, y = admit / applications)) +
+  geom_pointrange(aes(y = Estimate / applications,
+                      ymin = Q2.5 / applications,
+                      ymax = Q97.5 / applications),
+                  color = wes_palette("Moonrise2")[1],
+                  shape = 1, alpha = 1/3) +
+  geom_point(color = wes_palette("Moonrise2")[2]) +
+  geom_line(aes(group = dept),
+            color = wes_palette("Moonrise2")[2]) +
+  geom_text(data = text,
+            aes(y = admit, label = dept),
+            color = wes_palette("Moonrise2")[2],
+            family = "serif") +
+  scale_y_continuous("Proportion admitted", limits = 0:1) +
+  ggtitle("Posterior validation check") +
+  theme(axis.ticks.x = element_blank())
+```
+
+The model is wrong because women and men did not apply to the same department, and departments vary in their rates of admission.
+
+Instead of asking "What are the average probabilities of admission for women and men across all departments?" we want to ask "What is the average difference in probability of admission between women and men within departments?"
+
+The model better suited to answer that question follows the form
+$$
+\begin{align}
+\text{admit}_{i} & \sim \text{Binomial}(n_{i}, p_{i}) \\
+\text{logit}(p_{i}) & = \alpha_{gid[i]} + \delta_{dept[i]} \\
+\alpha_{j} & \sim \text{Normal}(0, 1.5) \\
+\delta_{k} & \sim \text{Normal}(0, 1.5),
+\end{align}
+$$
+
+```{r}
+b11.8 <-
+  brm(data = d,
+      family = binomial,
+      bf(admit | trials(applications) ~ a + d,
+         a ~ 0 + gid,
+         d ~ 0 + dept,
+         nl = TRUE),
+      prior = c(prior(normal(0, 1.5), nlpar = a),
+                prior(normal(0, 1.5), nlpar = d)),
+      iter = 4000, warmup = 1000, cores = 4, chains = 4,
+      seed = 11,
+      file = "fits/b11.08")
+```
+
+```{r}
+print(b11.8)
+```
+
+Like with the earlier mode, here we compute the difference score for $\alpha$ in two metrics.
+```{r}
+as_draws_df(b11.8) %>% 
+  mutate(diff_a = b_a_gidmale - b_a_gidfemale,
+         diff_p = inv_logit_scaled(b_a_gidmale) - 
+           inv_logit_scaled(b_a_gidfemale)) %>% 
+  pivot_longer(contains("diff")) %>% 
+  group_by(name) %>% 
+  mean_qi(value, .width = .89)
+```
+
+```{r}
+d %>% 
+  group_by(dept) %>% 
+  mutate(proportion = applications / sum(applications)) %>% 
+  select(dept, gid, proportion) %>% 
+  pivot_wider(names_from = dept,
+              values_from = proportion) %>% 
+  mutate_if(is.double, round, digits = 2)
+```
+
+```{r}
+d %>% 
+  group_by(dept) %>% 
+  mutate(proportion = applications / sum(applications)) %>% 
+  mutate(label = round(proportion, digits = 2),
+         gid   = fct_rev(gid)) %>% 
+  
+  ggplot(aes(x = dept, y = gid, fill = proportion, label = label)) +
+  geom_tile() +
+  geom_text(aes(color = proportion > .25),
+            family = "serif") +
+  scale_fill_gradient(low = wes_palette("Moonrise2")[4],
+                      high = wes_palette("Moonrise2")[1],
+                      limits = c(0, 1)) +
+  scale_color_manual(values = wes_palette("Moonrise2")[c(1, 4)]) +
+  scale_x_discrete(NULL, position = "top") +
+  ylab(NULL) +
+  theme(axis.text.y = element_text(hjust = 0),
+        axis.ticks = element_blank(),
+        legend.position = "none")
+```
+
+As it turns out, “The departments with a larger proportion of women applicants are also those with lower overall admissions rates” (p. 344). If we presume gender influences both choice of department and admission rates, we might depict that in a simple DAG where G is applicant gender, D is department, and A is acceptance into grad school.
+
+```{r}
+library(ggdag)
+
+dag_coords <-
+  tibble(name = c("G", "D", "A"),
+         x    = c(1, 2, 3),
+         y    = c(1, 2, 1))
+
+dagify(D ~ G,
+       A ~ D + G,
+       coords = dag_coords) %>%
+  
+  ggplot(aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_dag_text(color = wes_palette("Moonrise2")[4], family = "serif") +
+  geom_dag_edges(edge_color = wes_palette("Moonrise2")[4]) + 
+  scale_x_continuous(NULL, breaks = NULL) +
+  scale_y_continuous(NULL, breaks = NULL)
+```
+
+Although our b11.8 model did not contain a parameter corresponding to the G → D pathway, it did condition on both G and D. If we make another Figure like 11.5, we’ll see conditioning on both substantially improved the posterior predictive distribution.
+```{r}
+predict(b11.8) %>% 
+  data.frame() %>% 
+  bind_cols(d) %>% 
+  
+  ggplot(aes(x = case, y = admit / applications)) +
+  geom_pointrange(aes(y = Estimate / applications,
+                      ymin = Q2.5 / applications ,
+                      ymax = Q97.5 / applications),
+                  color = wes_palette("Moonrise2")[1],
+                  shape = 1, alpha = 1/3) +
+  geom_point(color = wes_palette("Moonrise2")[2]) +
+  geom_line(aes(group = dept),
+            color = wes_palette("Moonrise2")[2]) +
+  geom_text(data = text,
+            aes(y = admit, label = dept),
+            color = wes_palette("Moonrise2")[2],
+            family = "serif") +
+  scale_y_continuous("Proportion admitted", limits = 0:1) +
+  labs(title = "Posterior validation check",
+       subtitle = "Though imperfect, this model is a big improvement") +
+  theme(axis.ticks.x = element_blank())
+```
+
+Here’s the DAG that proposes an unobserved confound, U, that might better explain the D → A pathway.
+```{r}
+dag_coords <-
+  tibble(name = c("G", "D", "A", "U"),
+         x    = c(1, 2, 3, 3),
+         y    = c(1, 2, 1, 2))
+
+dagify(D ~ G + U,
+       A ~ D + G + U,
+       coords = dag_coords) %>%
+  
+  ggplot(aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_point(x = 3, y = 2, 
+             size = 5, color = wes_palette("Moonrise2")[2]) +
+  geom_dag_text(color = wes_palette("Moonrise2")[4], family = "serif") +
+  geom_dag_edges(edge_color = wes_palette("Moonrise2")[4]) + 
+  scale_x_continuous(NULL, breaks = NULL) +
+  scale_y_continuous(NULL, breaks = NULL)
+```
+
+Look at the pairs plot to get a sense of how highly correlated the parameters in our b11.8 model are. Why not get a little extra about it and use custom settings the upper triangle, the diagonal, and the lower triangle with a GGally::ggpairs() plot? First we save our custom settings.
+```{r}
+my_upper <- function(data, mapping, ...) {
+  
+  # get the x and y data to use the other code
+  x <- eval_data_col(data, mapping$x)
+  y <- eval_data_col(data, mapping$y)
+  
+  r  <- unname(cor.test(x, y)$estimate)
+  rt <- format(r, digits = 2)[1]
+  tt <- as.character(rt)
+  
+  # plot the cor value
+  ggally_text(
+    label = tt, 
+    mapping = aes(),
+    size = 4,
+    color = wes_palette("Moonrise2")[4], 
+    alpha = 4/5,
+    family = "Times") +
+    theme_void()
+}
+
+my_diag <- function(data, mapping, ...) {
+  ggplot(data = data, mapping = mapping) + 
+    geom_density(fill = wes_palette("Moonrise2")[2], linewidth = 0) +
+    theme_void()
+}
+
+my_lower <- function(data, mapping, ...) {
+  ggplot(data = data, mapping = mapping) + 
+    geom_point(color = wes_palette("Moonrise2")[1], 
+               size = 1/10, alpha = 1/10) +
+    theme_void()
+}
+```
+
+```{r}
+library(GGally)
+
+as_draws_df(b11.8) %>% 
+  select(starts_with("b_")) %>% 
+  set_names(c("alpha[male]", "alpha[female]", str_c("delta[", LETTERS[1:6], "]"))) %>%
+  ggpairs(upper = list(continuous = my_upper),
+          diag  = list(continuous = my_diag),
+          lower = list(continuous = my_lower),
+          labeller = "label_parsed") +
+  labs(title = "Model: b11.8",
+       subtitle = "The parameters are strongly correlated.") +
+  theme(strip.text = element_text(size = 11))
+```
+
+## 11.2 Poisson regression
+```{r}
+set.seed(11)
+
+tibble(y = rbinom(1e5, 1000, 1/1000)) %>% 
+  summarise(y_mean = mean(y),
+            y_variance = var(y))
+```
+
+Poisson data
+$$
+\begin{align}
+y_{i} & \sim \text{Poisson}(\lambda) \\
+\text{log}(\lambda)_{i} & = \alpha + \beta(x_{i} - \bar{x}),
+\end{align}
+$$
+
+### 11.2.1 Example: Oceanic tool complexity.
+```{r}
+data(Kline, package = "rethinking")
+d <- Kline
+rm(Kline)
+
+d
+```
+
+Add new columns
+```{r}
+d <-
+  d %>% 
+  mutate(log_pop_std = (log(population) - mean(log(population))) / sd(log(population)),
+         cid = contact)
+```
+
+Our statistical model will follow the form
+$$
+\begin{align}
+total_tools_{i} & \sim \text{Poisson}(\lambda_{i}) \\
+\text{log}(\lambda_{i}) & = \alpha_{ccid[i]} + \beta_{cid[i]} \text{log_pop_std}_{i} \\
+\alpha_{j} & \sim ? \\
+\beta_{j} & \sim ?,
+\end{align}
+$$
+
+The priors for $\alpha_{j}$ and $\beta_{j}$ have yet to be defined. If we continue our convention of using a Normal prior on the $\alpha$ parameters, we should recognize those will be log-Normal distributed on the outcome scale. Why? Because we're modeling $\lambda$ with the log link. Here's our version of Figure 11.7, depicting the two log-Normal priors considered in the text
+```{r}
+tibble(x = c(3, 22),
+       y = c(0.055, 0.04),
+       meanlog = c(0, 3),
+       sdlog = c(10, 0.5)) %>% 
+  expand_grid(number = seq(from = 0, to = 100, length.out = 200)) %>% 
+  mutate(density = dlnorm(number, meanlog, sdlog),
+         group = str_c("alpha%~%Normal(", meanlog, ", ", sdlog, ")")) %>% 
+  
+  ggplot(aes(fill = group, color = group)) +
+  geom_area(aes(x = number, y = density),
+            alpha = 3/4, linewidth = 0, position = "identity") +
+  geom_text(data = . %>% group_by(group) %>% slice(1),
+            aes(x = x, y = y, label = group),
+            family = "Times", parse = T, hjust = 0) +
+  scale_fill_manual(values = wes_palette("Moonrise2")[1:2]) +
+  scale_color_manual(values = wes_palette("Moonrise2")[1:2]) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  xlab("mean number of tools") +
+  theme(legend.position = "none")
+```
+In this context, $\alpha \sim \text{Normal}(0, 10)$ has a very long tail on the outcome scale. The mean of the log-Normal distribution, recall, is $\text{exp}(\mu + \sigma^2 / 2)$. Here that is in code.
+```{r}
+exp(0 + 10^2 / 2)
+```
+
+That is very large. Here's the same thing in a simulation
+```{r}
+set.seed(11)
+
+rnorm(1e4, 0, 10) %>% 
+  exp() %>% 
+  mean()
+```
+
+Now compute the mean for the other prior under consideration, $\alpha \sim \text{Normal}(3, 0.5).$
+```{r}
+exp(3 + 0.5^2 / 2)
+```
+
+This is much smaller and more reasonable. In case you were curious, here are the sam priors, this time on the scale of $\lambda$.
+```{r}
+tibble(x = c(10, 4),
+       y = c(0.05, 0.5),
+       mean = c(0, 3),
+       sd = c(10, 0.5)) %>% 
+  expand_grid(number = seq(from = -25, to = 25, length.out = 500)) %>% 
+  mutate(density = dnorm(number, mean, sd),
+         group = str_c("alpha%~%Normal(", mean, ", ", sd, ")")) %>% 
+  
+  ggplot(aes(fill = group, color = group)) +
+  geom_area(aes(x = number, y = density),
+            alpha = 3/4, linewidth = 0, position = "identity") +
+  geom_text(data = . %>% group_by(group) %>% slice(1),
+            aes(x = x, y = y, label = group),
+            family = "Times", parse = T, hjust = 0) +
+  scale_fill_manual(values = wes_palette("Moonrise2")[1:2]) +
+  scale_color_manual(values = wes_palette("Moonrise2")[1:2]) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  xlab(expression(lambda~scale)) +
+  theme(legend.position = "none")
+```
+
+Now let's prepare to make the top row of Figure 11.8. In this portion of the figure, we consider the implications of two competing priors for $\beta$ while holding the prior for $\alpha$ at $\text{Normal}(3, 0.5)$. The two $\beta$ priors under consideration are $\text{Normal}(0, 10)$ and $\text{Normal}(0, 0.2)$.
+```{r}
+set.seed(11)
+
+# how many lines would you like?
+n <- 100
+
+# simulate and wrangle
+tibble(i = 1:n,
+       a = rnorm(n, mean = 3, sd = 0.5)) %>%
+  mutate(`beta%~%Normal(0*', '*10)` = rnorm(n, mean = 0, sd = 10),
+         `beta%~%Normal(0*', '*0.2)` = rnorm(n, mean = 0, sd = 0.2)) %>% 
+  pivot_longer(contains("beta"),
+               values_to = "b",
+               names_to = "prior") %>% 
+  expand_grid(x = seq(from = -2, to = 2, length.out = 100)) %>% 
+  
+  # plot
+  ggplot(aes(x = x, y = exp(a + b * x), group = i)) +
+  geom_line(linewidth = 1/4, alpha = 2/3,
+            color = wes_palette("Moonrise2")[4]) +
+  labs(x = "log population (std)",
+       y = "total tools") +
+  coord_cartesian(ylim = c(0, 100)) +
+  facet_wrap(~ prior, labeller = label_parsed)
+```
+
+```{r}
+set.seed(11)
+
+prior <- 
+  tibble(i = 1:n,
+         a = rnorm(n, mean = 3, sd = 0.5),
+         b = rnorm(n, mean = 0, sd = 0.2)) %>% 
+  expand_grid(x = seq(from = log(100), to = log(200000), length.out = 100))
+
+# left
+p1 <- 
+  prior %>% 
+  ggplot(aes(x = x, y = exp(a + b * x), group = i)) +
+  geom_line(linewidth = 1/4, alpha = 2/3,
+            color = wes_palette("Moonrise2")[4]) +
+  labs(subtitle = expression(beta%~%Normal(0*', '*0.2)),
+       x = "log population",
+       y = "total tools") +
+  coord_cartesian(xlim = c(log(100), log(200000)),
+                  ylim = c(0, 500))
+
+# right
+p2 <-
+  prior %>% 
+  ggplot(aes(x = exp(x), y = exp(a + b * x), group = i)) +
+  geom_line(linewidth = 1/4, alpha = 2/3,
+            color = wes_palette("Moonrise2")[4]) +
+  labs(subtitle = expression(beta%~%Normal(0*', '*0.2)),
+       x = "population",
+       y = "total tools") +
+  coord_cartesian(xlim = c(100, 200000),
+                  ylim = c(0, 500))
+
+# combine
+p1 | p2
+```
+
+Okay, after set the updated model formula is
+$$
+\begin{align}
+y_{i} & \sim \text{Poisson}(\lambda_{i}) \\
+\text{log}(\lambda_{i}) & = \alpha + \beta(x_{i} - \bar{x}) \\
+\alpha & \sim \text{Normal}(3, 0.5) \\
+\beta & \sim \text{Normal}(0, 0.2)
+\end{align}
+$$
+
+We're finally ready to fit the model. The only new thing in our model code is family = poisson. In this case, brms defaults to the log()) link. We'll fit both an intercept-only Poisson model and an interaction model.
+```{r}
+# intercept only
+b11.9 <-
+  brm(data = d, 
+      family = poisson,
+      total_tools ~ 1,
+      prior(normal(3, 0.5), class = Intercept),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 11,
+      file = "fits/b11.09") 
+
+# interaction model
+b11.10 <-
+  brm(data = d, 
+      family = poisson,
+      bf(total_tools ~ a + b * log_pop_std,
+         a + b ~ 0 + cid,
+         nl = TRUE),
+      prior = c(prior(normal(3, 0.5), nlpar = a),
+                prior(normal(0, 0.2), nlpar = b)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 11,
+      file = "fits/b11.10") 
+```
+
+```{r}
+print(b11.9)
+```
+
+```{r}
+print(b11.10)
+```
+
+Now compute the LOO estimates and compare the models by the LOO.
+```{r}
+b11.9 <- add_criterion(b11.9, "loo")
+b11.10 <- add_criterion(b11.10, "loo")
+
+loo_compare(b11.9, b11.10, criterion = "loo") %>% print(simplify = F)
+```
+
+Here's the LOO weight.
+```{r}
+model_weights(b11.9, b11.10, weights = "loo") %>% round(digits = 2)
+```
+
+McElreath reported getting a warning from his rethinking::compare(). Our warning came from the add_criterion() function. We can inspect the Pareto k values with loo::pareto_k_table()
+```{r}
+loo(b11.10) %>% loo::pareto_k_table()
+```
+
+Take a closer look
+```{r}
+tibble(culture = d$culture,
+       k = b11.10$criteria$loo$diagnostics$pareto_k) %>% 
+  arrange(desc(k)) %>% 
+  mutate_if(is.double, round, digits = 2)
+```
+
+```{r}
+cultures <- c("Hawaii", "Tonga", "Trobriand", "Yap")
+
+library(ggrepel)
+
+nd <- 
+  distinct(d, cid) %>% 
+  expand_grid(log_pop_std = seq(from = -4.5, to = 2.5, length.out = 100))
+
+f <-
+  fitted(b11.10,
+         newdata = nd,
+         probs = c(.055, .945)) %>% 
+  data.frame() %>% 
+  bind_cols(nd)
+
+p1 <-
+  f %>% 
+  ggplot(aes(x = log_pop_std, group = cid, color = cid)) +
+  geom_smooth(aes(y = Estimate, ymin = Q5.5, ymax = Q94.5, fill = cid),
+              stat = "identity",
+              alpha = 1/4, linewidth = 1/2) +
+  geom_point(data = bind_cols(d, b11.10$criteria$loo$diagnostics),
+             aes(y = total_tools, size = pareto_k),
+             alpha = 4/5) +
+  geom_text_repel(data = 
+                    bind_cols(d, b11.10$criteria$loo$diagnostics) %>% 
+                    filter(culture %in% cultures) %>% 
+                    mutate(label = str_c(culture,
+                                         " (",
+                                         round(pareto_k, digits = 2), " )")),
+                  aes(y = total_tools, label = label),
+                  size = 3, seed = 11, color = "black",
+                  family = "Times") +
+  labs(x = "log population (std)",
+       y = "total tools") +
+  coord_cartesian(xlim = range(b11.10$data$log_pop_std),
+                  ylim = c(0, 80))
+```
+
+```{r}
+p2 <-
+  f %>% 
+  mutate(population = 
+           exp((log_pop_std * sd(log(d$population))) +
+                 mean(log(d$population)))) %>% 
+  ggplot(aes(x = population, group = cid, color = cid)) +
+  geom_smooth(aes(y = Estimate, ymin = Q5.5,
+                  ymax = Q94.5, fill = cid),
+              stat = "identity",
+              alpha = 1/4, linewidth = 1/2) +
+  geom_point(data = bind_cols(d, b11.10$criteria$loo$diagnostics),
+             aes(y = total_tools, size = pareto_k),
+             alpha = 4/5) +
+  scale_x_continuous("population", breaks = c(0, 5e4, 15e4, 25e4)) +
+  ylab("total tools") +
+  coord_cartesian(xlim = range(d$population),
+                  ylim = c(0, 80))
+```
+
+```{r}
+(p1 | p2) &
+  scale_fill_manual(values = wes_palette("Moonrise2")[1:2]) &
+  scale_color_manual(values = wes_palette("Moonrise2")[1:2]) &
+  scale_size(range = c(2, 5)) &
+  theme(legend.position = "none")
+```
+
+#### 11.2.1.1 Overthinking: Modeling tool innovation.
+McElreath's theoretical, or scientific, model for total_tools is
+
+$$
+total_tools = \frac{ \alpha_{cid[i]} \text{population}^{\beta_{cid[i]}}}{\gamma}
+$$
+
+We can use the Poisson likelihood to express this in a Bayesian model as
+$$
+\begin{align}
+total_tools & \sim \text{Poisson}(\lambda_{i}) \\
+\lambda_{i} & = \frac{[\text{exp}(\alpha_{cid[i]})\text{population}_{i}^{\beta_{cid[i]}}]}{\gamma} \\
+\alpha_{j} & \sim \text{Normal}(1, 1) \\
+\beta{j} & \sim \text{Exponential}(1) \\
+\gamma & \sim \text{Exponential}(1),
+\end{align}
+$$
+
+where we exponentiata $\alpha_{cid[i]}$ to restrict the posterior to zero and above. Here's how we might fit that model with brms.
+```{r}
+b11.11 <-
+  brm(data = d,
+      family = poisson(link = "identity"),
+      bf(total_tools ~ exp(a) * population^b / g,
+         a + b ~ 0 + cid,
+         g ~ 1,
+         nl = TRUE),
+      prior = c(prior(normal(1, 1), nlpar = a),
+                prior(exponential(1), nlpar = b, lb = 0),
+                prior(exponential(1), nlpar = g, lb = 0)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 11,
+      control = list(adapt_delta = .85),
+      file = "fits/b11.11")
+```
+
+Did you notice the ```family = poisson(link = "identity)``` part of the code? Yes, it's possible to use the Poisson likelihood without the log link. However, if you're going to buck tradition and use some other link, make sure you know what you're doing.
+```{r}
+print(b11.11)
+```
+
+```{r}
+b11.11 <- add_criterion(b11.11, criterion = "loo", moment_match = T)
+
+loo(b11.11)
+```
+
+The first time through, we still had Pareto high $k$ values. Recall that due to the very small sample size, this isn’t entirely surprising. Newer versions of brms might prompt you to set ```moment_match = TRUE```, which is what I did, here. You might perform the operation both ways to get a sense of the difference.
+```{r}
+# for the annotation
+text <-
+  distinct(d, cid) %>% 
+  mutate(population = c(210000, 72500),
+         total_tools = c(59, 68),
+         label = str_c(cid, " contact"))
+
+# redefine the new data
+nd <-
+  distinct(d, cid) %>% 
+  expand_grid(population = seq(from = 0, to = 300000, length.out = 100))
+
+# compute the poster predictions for lambda
+fitted(b11.11,
+       newdata = nd,
+       probs = c(.055, .945)) %>% 
+  data.frame() %>% 
+  bind_cols(nd) %>% 
+  
+  # plot!
+  ggplot(aes(x = population, group = cid, color = cid)) +
+  geom_smooth(aes(y = Estimate, ymin = Q5.5, ymax = Q94.5,
+                  fill = cid),
+              stat = "identity",
+              alpha = 1/4, linewidth = 1/2) +
+  geom_point(data = bind_cols(d, b11.11$criteria$loo$diagnostics),
+             aes(y = total_tools, size = pareto_k),
+             alpha = 4/5) +
+  geom_text(data = text,
+            aes(y = total_tools, label = label),
+            family = "serif") +
+  scale_fill_manual(values = wes_palette("Moonrise2")[1:2]) +
+  scale_color_manual(values = wes_palette("Moonrise2")[1:2]) +
+  scale_size(range = c(2, 5)) +
+  scale_x_continuous("population", 
+                     breaks = c(0, 50000, 150000, 250000)) +
+  ylab("total tools") +
+  coord_cartesian(xlim = range(d$population),
+                  ylim = range(d$total_tools)) +
+  theme(legend.position = "none")
+```
+
+In case you were curious, here are the results if we compare ```b11.10``` and ```b11.11``` by the PSIS-LOO.
+```{r}
+loo_compare(b11.10, b11.11, criterion = "loo") %>% print(simplify = F)
+```
+
+```{r}
+model_weights(b11.10, b11.11, weights = "loo") %>% round(digits = 3)
+```
+
+Finally, here's a comparison of the two models by the Pareto $k$ values.
+```{r}
+tibble(
+  b11.10 = b11.10$criteria$loo$diagnostics$pareto_k,
+  b11.11 = b11.11$criteria$loo$diagnostics$pareto_k) %>% 
+  pivot_longer(everything()) %>% 
+  
+  ggplot(aes(x = value, y = name)) +
+  geom_vline(xintercept = c(.5, .7, 1), linetype = 3,
+             color = wes_palette("Moonrise2")[2]) +
+  stat_dots(slab_fill = wes_palette("Moonrise2")[1],
+            slab_color = wes_palette("Moonrise2")[1]) +
+  scale_x_continuous(expression(Pareto~italic(k)),
+                     breaks = c(.5, .7, 1)) +
+  ylab(NULL) +
+  coord_cartesian(ylim = c(1.5, 2.4))
+```
+
+### 11.2.2 Negative binomial (gamma-Poisson) models.
+### 11.2.3 Example: Exposure and the offset
+```{r}
+set.seed(11)
+
+num_days <- 30
+y <- rpois(num_days, lambda = 1.5)
+
+num_weeks <- 4
+y_new <- rpois(num_weeks, lambda = 0.5 * 7)
+```
+
+Now tidy the data and add log_days
+```{r}
+(
+  d <-
+    tibble(y = c(y, y_new),
+           days = rep(c(1, 7), times = c(num_days, num_weeks)),
+           monastery = rep(0:1, times = c(num_days, num_weeks))) %>% 
+    mutate(log_days = log(days))
+)
+```
+
+$$
+\begin{align}
+y_{i} & \sim \text{Poisson}(\lambda_{i}) \\
+\text{log}\mu_{i} & = \text{log} \ \tau_{i} + \alpha + \beta \text{monastery}_{i} \\
+\alpha & \sim \text{Normal}(0, 1) \\
+\beta & \sim \text{Normal}(0, 1),
+\end{align}
+$$
+
+where the offset log $\tau_{i}$ does not get a prior. In this context, its value is added directly to the right side of the formula. With the brms package, you use the offset() function in the formula syntax. You just insert a pre-processed variable like log_days or the log of a variable, such as log(days). Fit the model.
+```{r}
+b11.12 <-
+  brm(data = d,
+      family = poisson,
+      y ~ 1 + offset(log_days) + monastery,
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b)),
+      iter = 2000, warmup = 1000, cores = 4, chains = 4,
+      seed = 11,
+      file = "fits/b11.12")
+```
+
+```{r}
+print(b11.12)
+```
+
+To get the posterior distributions for average dily outpus for the old and new monasteris, respectively, we'll use the formulas
+$$
+\begin{align}
+\lambda_{old} & = \text{exp}(\alpha) \text{and} \\
+\lambda_{new} & \text{exp}(\alpha + \beta_{moastery}).
+\end{align}
+$$
+
+```{r}
+posterior_samples(b11.12) %>% 
+  mutate(lambda_old = exp(b_Intercept),
+         lambda_new = exp(b_Intercept + b_monastery)) %>% 
+  pivot_longer(contains("lambda")) %>% 
+  mutate(name = factor(name, levels = c("lambda_old", "lambda_new"))) %>% 
+  group_by(name) %>% 
+  mean_hdi(value, .width = .89) %>% 
+  mutate_if(is.double, round, digits = 2)
+```
+
+## 11.3 Multinomial and categorical models
+### 11.3.1 Predictors matched to outcomes
+```{r}
+library(rethinking)
+
+# simulate career choices among 500 individuals
+n <- 500 # number of individuals
+income <- c(1, 2, 5) # expected income of each career
+score <- 0.5 * income # scores for each career, based on income
+
+# next line converts scores to probabilities
+p <- softmax(score[1], score[2], score[3])
+
+# now simulate choice
+# outcome career holds event type values, not counts
+career <- rep(NA, n) # empty vector of choices for each individual
+
+# sample chosen career for each individual
+set.seed(34302)
+
+# sample chosen career for each individual
+for (i in 1:n) career[i] <- sample(1:3, size = 1, prob = p)
+```
+
+```{r}
+print(score)
+```
+
+```{r}
+# put them in a tibble
+d <-
+  tibble(career = career) %>% 
+  mutate(career_income = ifelse(career == 3, 5, career))
+
+# plot
+d %>% 
+  ggplot(aes(x = career)) +
+  geom_bar(linewidth = 0, fill = wes_palette("Moonrise2")[2])
+```
+
+```{r}
+d %>% 
+  count(career) %>% 
+  mutate(percent = (100 * n / sum(n)),
+         probability = n / sum(n))
+```
+
+```{r}
+tibble(income = c(1, 2, 5)) %>% 
+  mutate(score = 0.5 * income) %>% 
+  mutate(p = exp(score) / sum(exp(score)))
+```
+
+```{r}
+tibble(income = c(1, 2, 5),
+       some_constant = 11) %>% 
+  mutate(score = (0.5 * income) + some_constant) %>% 
+  mutate(p = exp(score) / sum(exp(score)))
+```
+
+Fit the model with Stan.
+```{r}
+# define the model
+code_m11.13 <- "
+  data{
+    int N; // number of individuals
+    int K; // number of possible careers
+    array[N] int career; // outcome
+    vector[K] career_income;
+  }
+  
+  parameters{
+    vector[K - 1] a; // intercepts
+    real<lower=0> b; // association of income with choice
+  }
+  
+  model{
+    vector[K] p;
+    vector[K] s;
+    a ~ normal(0, 1);
+    b ~ normal(0, 0.5);
+    s[1] = a[1] + b * career_income[1];
+    s[2] = a[2] + b * career_income[2];
+    s[3] = 0; // pivot
+    p = softmax(s);
+    career ~ categorical(p);
+  }
+"
+
+# wrangle the data
+dat_list <-
+  list(N = n,
+       K = 3,
+       career = career,
+       career_income = income)
+
+# fit the model
+m11.13 <- rstan::sampling(object = rstan::stan_model(model_code = code_m11.13),
+                   data = dat_list,
+                   chains = 4,
+                   iter = 2000,
+                   warmup = 500,
+                   control = list(adapt_delta = 0.95))
+```
+
+```{r}
+precis(m11.13, depth = 2) %>% round(digits = 2)
+```
+
+```{r}
+post <- extract.samples(m11.13)
+
+# set up logit scores
+s1 <- with(post, a[, 1] + b * income[1])
+s2_orig <- with(post, a[, 2] + b * income[2])
+s2_new <- with(post, a[, 2] + b * income[2] * 2)
+
+# compute probabilities for original and counterfactual
+p_orig <- sapply(1:length(post$b), function(i) softmax(c(s1[i], s2_orig[i], 0)))
+
+p_new <- sapply(1:length(post$b), function(i) softmax(c(s1[i], s2_new[i], 0)))
+
+# summarize
+p_diff <- p_new[2, ] - p_orig[2, ]
+precis(p_diff)
+```
+
+Even though we used the same code, our counterfactual simulation doesn’t match up with the results McElreath reported in the text, either. Keep this all in mind as we switch to brms. But before we move on to brms, check this out.
+
+```{r}
+data.frame(s1 = score[3] + s1,
+           s2 = score[3] + s2_orig,
+           s3 = score[3] + 0) %>% 
+  pivot_longer(everything()) %>% 
+  group_by(name) %>% 
+  mean_qi(value) %>% 
+  mutate_if(is.double, round, digits = 2)
+```
+
+```{r}
+get_prior(data = d,
+          family = categorical(link = logit, refcat = 3),
+          career ~ 1)
+```
+
+```{r}
+b11.13io <-
+  brm(data = d,
+      family = categorical(link = logit, refcat = 3),
+      career ~ 1,
+      prior = c(prior(normal(0, 1), class = Intercept, dpar = mu1),
+                prior(normal(0, 1), class = Intercept, dpar = mu2)),
+      iter = 2000, warmup = 1000, cores = 4, chains = 4,
+      seed = 11,
+      file = "fits/b11.13io")
+```
+
+```{r}
+print(b11.13io)
+```
+
+```{r}
+tibble(income = c(1, 2, 5)) %>% 
+  mutate(score = 0.5 * income) %>% 
+  mutate(rescaled_score = score - 2.5)
+```
+
+```{r}
+fitted(b11.13io) %>% str()
+```
+
+```{r}
+fitted(b11.13io)[1, , ] %>% round(digits = 2)
+```
+
+```{r}
+fitted(b11.13io)[1, , ] %>% 
+  round(digits = 2) %>% 
+  t()
+```
+Now compare those summaries with the empirically-derived percent and probability values we computed earlier.
+```{r}
+tibble(income = c(1, 2, 5)) %>% 
+  mutate(score = 0.5 * income) %>% 
+  mutate(p = exp(score) / sum(exp(score)))
+```
+
+Now here's how to make use of the formula from the last mutate() line, $\frac{exp(s_{k})}{\sum^{K}_{i=1} \text{exp}(s_{i})}$, to compute the marginal probabilities from b11.13io by hand
+```{r}
+as_draws_df(b11.13io) %>% 
+  mutate(b_mu3_Intercept = 0) %>% 
+  mutate(p1 = exp(b_mu1_Intercept) / 
+           (exp(b_mu1_Intercept) + exp(b_mu2_Intercept) +
+              exp(b_mu3_Intercept)),
+         p2 = exp(b_mu2_Intercept) / 
+           (exp(b_mu1_Intercept) + exp(b_mu2_Intercept) +
+              exp(b_mu3_Intercept)),
+         p3 = exp(b_mu3_Intercept) / 
+           (exp(b_mu1_Intercept) + exp(b_mu2_Intercept) +
+              exp(b_mu3_Intercept))) %>% 
+  pivot_longer(p1:p3) %>% 
+  group_by(name) %>% 
+  mean_qi(value) %>% 
+  mutate_if(is.double, round, digits = 2)
+```
+
+```{r}
+# verbose syntax
+b11.13io_verbose <-
+  brm(data = d,
+      family = categorical(link = logit, refcat = 3),
+      bf(career ~ 1,
+         mu1 ~ 1,
+         mu2 ~ 1),
+      prior = c(prior(normal(0, 1), class = Intercept, dpar = mu1),
+                prior(normal(0, 1), class = Intercept, dpar = mu2)),
+      iter = 2000, warmup = 1000, cores = 4, chains = 4,
+      seed = 11,
+      file = "fits/b11.13io_verbose")
+
+# nonlinear syntax
+b11.13io_nonlinear <-
+  brm(data = d,
+      family = categorical(link = logit, refcat = 3),
+      bf(career ~ 1,
+         nlf(mu1 ~ a1),
+         nlf(mu2 ~ a2),
+         a1 + a2 ~ 1),
+      prior = c(prior(normal(0, 1), class = b, nlpar = a1),
+                prior(normal(0, 1), class = b, nlpar = a2)),
+      iter = 2000, warmup = 1000, cores = 4, chains = 4,
+      seed = 11,
+      file = "fits/b11.13io_nonlinear")
+```
+
+```{r}
+crossing(b = factor(c("b1 & b2", "b"), levels = c("b1 & b2", "b")),
+         lb = factor(c("NA", 0), levels = c("NA", 0))) %>% 
+  mutate(fit = str_c("b11.13", letters[1:n()])) %>% 
+  select(fit, everything()) %>% 
+  
+  flextable() %>% 
+  width(width = 1.25)
+```
+
+Fit b11.13a through b11.13d, the four variants on the model.
+```{r}
+b11.13a <-
+  brm(data = d,
+      family = categorical(link = logit, refcat = 3),
+      bf(career ~ 1,
+         nlf(mu1 ~ a1 + b1 * 1),
+         nlf(mu2 ~ a2 + b2 * 2),
+         a1 + a2 + b1 + b2 ~ 1),
+      prior = c(prior(normal(0, 1), class = b, nlpar = a1),
+                prior(normal(0, 1), class = b, nlpar = a2),
+                prior(normal(0, 0.5), class = b, nlpar = b1),
+                prior(normal(0, 0.5), class = b, nlpar = b2)),
+      iter = 2000, warmup = 1000, cores = 4, chains = 4,
+      seed = 11,
+      file = "fits/b11.13a")
+
+b11.13b <-
+  brm(data = d,
+      family = categorical(link = logit, refcat = 3),
+      bf(career ~ 1,
+         nlf(mu1 ~ a1 + b1 * 1),
+         nlf(mu2 ~ a2 + b2 * 2),
+         a1 + a2 + b1 + b2 ~ 1),
+      prior = c(prior(normal(0, 1), class = b, nlpar = a1),
+                prior(normal(0, 1), class = b, nlpar = a2),
+                prior(normal(0, 0.5), class = b, nlpar = b1, lb = 0),
+                prior(normal(0, 0.5), class = b, nlpar = b2, lb = 0)),
+      iter = 2000, warmup = 1000, cores = 4, chains = 4,
+      seed = 11,
+      control = list(adapt_delta = .99),
+      file = "fits/b11.13b")
+
+b11.13c <-
+  brm(data = d, 
+      family = categorical(link = logit, refcat = 3),
+      bf(career ~ 1,
+         nlf(mu1 ~ a1 + b * 1),
+         nlf(mu2 ~ a2 + b * 2),
+         a1 + a2 + b ~ 1),
+      prior = c(prior(normal(0, 1), class = b, nlpar = a1),
+                prior(normal(0, 1), class = b, nlpar = a2),
+                prior(normal(0, 0.5), class = b, nlpar = b)),
+      iter = 2000, warmup = 1000, cores = 4, chains = 4,
+      seed = 11,
+      file = "fits/b11.13c")
+
+b11.13d <-
+  brm(data = d, 
+      family = categorical(link = logit, refcat = 3),
+      bf(career ~ 1,
+         nlf(mu1 ~ a1 + b * 1),
+         nlf(mu2 ~ a2 + b * 2),
+         a1 + a2 + b ~ 1),
+      prior = c(prior(normal(0, 1), class = b, nlpar = a1),
+                prior(normal(0, 1), class = b, nlpar = a2),
+                prior(normal(0, 0.5), class = b, nlpar = b, lb = 0)),
+      iter = 2000, warmup = 1000, cores = 4, chains = 4,
+      seed = 11,
+      control = list(adapt_delta = .99),
+      file = "fits/b11.13d")
+```
+
+Parameter summaries in bulk with a coefficient plot
+```{r}
+tibble(fit = str_c("b11.13", letters[1:4])) %>% 
+  mutate(fixef = purrr::map(fit, ~ get(.) %>% 
+                              fixef() %>%
+                              data.frame() %>% 
+                              rownames_to_column("parameter"))) %>% 
+  unnest(fixef) %>% 
+  mutate(parameter = str_remove(parameter, "_Intercept"),
+         fit       = factor(fit, levels = str_c("b11.13", letters[4:1]))) %>% 
+  
+  ggplot(aes(x = Estimate, xmin = Q2.5, xmax = Q97.5, y = fit)) +
+  geom_vline(xintercept = 0, color = wes_palette("Moonrise2")[3]) +
+  geom_pointrange(fatten = 3/2, color = wes_palette("Moonrise2")[4]) +
+  ylab(NULL) +
+  theme(axis.ticks.y = element_blank(),
+        panel.background = element_rect(fill = alpha("white", 1/8), linewidth = 0)) +
+  facet_wrap(~ parameter, nrow = 1)
+```
+
+```{r}
+precis(m11.13, depth = 2)
+```
+
+```{r}
+fixef(b11.13d) %>% round(digits = 2)
+```
+
+It might be instructive to compare b11.13a through b11.13d with the PSIS-LOO.
+```{r}
+b11.13a <- add_criterion(b11.13a, "loo")
+b11.13b <- add_criterion(b11.13b, "loo")
+b11.13c <- add_criterion(b11.13c, "loo")
+b11.13d <- add_criterion(b11.13d, "loo")
+
+loo_compare(b11.13a, b11.13b, b11.13c, b11.13d, criterion = "loo") %>% 
+  print(simplify = F)
+```
+
+```{r}
+model_weights(b11.13a, b11.13b, b11.13c, b11.13d, weights = "loo") %>% 
+  round(digits = 2)
+```
+
+```{r}
+b11.13io <- add_criterion(b11.13io, "loo")
+
+loo_compare(b11.13io, b11.13a, b11.13b, b11.13c, b11.13d, criterion = "loo") %>% 
+  print(simplify = F)
+```
+
+```{r}
+model_weights(b11.13io, b11.13a, b11.13b, b11.13c, b11.13d, weights = "loo") %>% 
+  round(digits = 2)
+```
+
+```{r}
+as_draws_df(b11.13d) %>% 
+  transmute(s1      = b_a1_Intercept + b_b_Intercept * income[1],
+            s2_orig = b_a2_Intercept + b_b_Intercept * income[2],
+            s2_new  = b_a2_Intercept + b_b_Intercept * income[2] * 2) %>% 
+  mutate(p_orig = purrr::map2_dbl(s1, s2_orig, ~softmax(.x, .y, 0)[2]),
+         p_new  = purrr::map2_dbl(s1, s2_new, ~softmax(.x, .y, 0)[2])) %>% 
+  mutate(p_diff = p_new - p_orig) %>% 
+  mean_qi(p_diff) %>% 
+  mutate_if(is.double, round, digits = 2)
+```
+
+### 11.3.2 Predictors matched to observations
+```{r}
+n <- 500
+set.seed(11)
+
+# simulate family incomes for each individual
+family_income <- runif(n)
+
+# assign a unique coefficient for each type of event
+b <- c(-2, 0, 2)
+career <- rep(NA, n) # empty vector of choices for each individual
+for (i in 1:n) {
+  score <- 0.5 * (1:3) + b * family_income[i]
+  p <- softmax(score[1], score[2], score[3])
+  career[i] <- sample(1:3, size = 1, prob = p)
+}
+```
+
+In effect, we now have three data-generating equations:
+$$
+\begin{align}
+s_{1} & = 0.5 + -2 \cdot \text{family_income}_{i} \\
+s_{2} & = 1.0 + 0 \cdot \text{family_income}_{i} \\
+s_{3} & = 1.5 + 2 \cdot \text{family_income}_{i},
+\end{align}
+$$
+
+where, because ```family_income``` is an actual variable that can take on unique values for each row in the data, we can call the first term in each equation the $\alpha$ parameter and the second term in each equation the $\beta$ parameter AND those $\beta$ parameters will be more than odd double intercepts.
+
+We might examine what the ```family_income``` distributions look like across the three levels of ```career```. We'll do it in two plots and combine them with the patchwork syntax. The first will be overlapping densities. For the second, we'll display the proportions of ```career``` across a discretized version of ```family_income``` in a stacked area plot.
+```{r}
+# put the data in a tibble
+d <-
+  tibble(career = career) %>% 
+  mutate(family_income = family_income)
+
+p1 <-
+  d %>% 
+  mutate(career = as.factor(career)) %>% 
+  
+  ggplot(aes(x = family_income, fill = career)) +
+  geom_density(linewidth = 0, alpha = 3/4) +
+  scale_fill_manual(values = wes_palette("Moonrise2")[c(4, 2, 1)]) +
+  theme(legend.position = "none")
+
+p2 <-
+  d %>% 
+  mutate(career = as.factor(career)) %>% 
+  
+  mutate(fi = santoku::chop_width(family_income, width = .1,
+                                  start = 0, labels = 1:10)) %>% 
+  count(fi, career) %>% 
+  group_by(fi) %>% 
+  mutate(proportion = n / sum(n)) %>% 
+  mutate(f = as.double(fi)) %>% 
+  
+  ggplot(aes(x = (f - 1) / 9, y = proportion, fill = career)) +
+  geom_area() +
+  scale_fill_manual(values = wes_palette("Moonrise2")[c(4, 2, 1)]) +
+  xlab("family income, descritized")
+
+p1 + p2
+```
+
+```{r}
+b11.14 <-
+  brm(data = d,
+      family = categorical(link = logit, refcat = 3),
+      bf(career ~ 1,
+         nlf(mu1 ~ a1 + b1 * family_income),
+         nlf(mu2 ~ a2 + b2 * family_income),
+         a1 + a2 + b1 + b2 ~ 1),
+      prior = c(prior(normal(0, 1.5), class = b, nlpar = a1),
+                prior(normal(0, 1.5), class = b, nlpar = a2),
+                prior(normal(0, 1), class = b, nlpar = b1),
+                prior(normal(0, 1), class = b, nlpar = b2)),
+      iter = 2000, warmup = 1000, cores = 4, chains = 4,
+      seed = 11,
+      file = "fits/b11.14"
+      )
+```
+
+```{r}
+print(b11.14)
+```
+
+Check the PSIS-LOO
+```{r}
+b11.14 <- add_criterion(b11.14, "loo")
+
+loo(b11.14)
+```
+
+```{r}
+nd <- tibble(family_income = 
+               seq(from = 0, to = 1, length.out = 60))
+
+f <-
+  fitted(b11.14,
+         newdata = nd)
+```
+
+```{r}
+# wrangle
+rbind(f[, , 1],
+      f[, , 2],
+      f[, , 3]) %>% 
+  data.frame() %>% 
+  bind_cols(expand_grid(career = 1:3, nd)) %>% 
+  mutate(career = str_c("career: ", career)) %>% 
+  
+  # plot
+  ggplot(aes(x = family_income, y = Estimate,
+         ymin = Q2.5, ymax = Q97.5,
+         fill = career, color = career)) +
+  geom_ribbon(alpha = 2/3, linewidth = 0) +
+  geom_line(linewidth = 3/4) +
+  scale_fill_manual(values = wes_palette("Moonrise2")[c(4, 2, 1)]) +
+  scale_color_manual(values = wes_palette("Moonrise2")[c(4, 2, 1)]) +
+  scale_x_continuous(breaks = 0:2 / 2) +
+  scale_y_continuous("probability", limits = c(0, 1),
+                     breaks = 0:3 / 3, 
+                     labels = c("0", ".33", ".67", "1")) +
+  theme(axis.text.y = element_text(hjust = 0),
+        legend.position = "none") +
+  facet_wrap(~ career)
+```
+
+```{r}
+# annotation
+text <-
+  tibble(family_income = c(.45, .3, .15),
+         proportion = c(.65, .8, .95),
+         label = str_c("career: ", 3:1),
+         color = c("a", "a", "b"))
+
+# wrangle
+rbind(f[, , 1],
+      f[, , 2],
+      f[, , 3]) %>% 
+  data.frame() %>% 
+  bind_cols(expand_grid(career = 1:3, nd)) %>% 
+  group_by(family_income) %>% 
+  mutate(proportion = Estimate / sum(Estimate),
+         career = factor(career)) %>% 
+  
+  # plot!
+  ggplot(aes(x = family_income, y = proportion)) +
+  geom_area(aes(fill = career)) +
+  geom_text(data = text,
+            aes(label = label, color = color),
+            family = "Times", size = 4.25) +
+  scale_color_manual(values = wes_palette("Moonrise2")[4:3]) +
+  scale_fill_manual(values = wes_palette("Moonrise2")[c(4, 2, 1)]) +
+  theme(legend.position = "none")
+```
+
+#### 11.3.2.1 Multinomial in disguise as Poisson.
+```{r}
+data(UCBadmit, package = "rethinking")
+d <- UCBadmit
+rm(UCBadmit)
+```
+
+```{r}
+# binomial model of overall admission probability
+b11.binom <-
+  brm(data = d, 
+      family = binomial,
+      admit | trials(applications) ~ 1,
+      prior(normal(0, 1.5), class = Intercept),
+      iter = 2000, warmup = 1000, cores = 3, chains = 3,
+      seed = 11,
+      file = "fits/b11.binom")
+
+# Poisson model of overall admission rate and rejection rate
+b11.pois <-
+  brm(data = d %>%
+        mutate(rej = reject),  # 'reject' is a reserved word
+      family = poisson,
+      mvbind(admit, rej) ~ 1,
+      prior(normal(0, 1.5), class = Intercept),
+      iter = 2000, warmup = 1000, cores = 3, chains = 3,
+      seed = 11,
+      file = "fits/b11.pois")
+```
+
+```{r}
+# extract the samples
+post <- as_draws_df(b11.pois)
+# wrangle
+post %>%
+  mutate(admit  = exp(b_admit_Intercept), 
+         reject = exp(b_rej_Intercept)) %>% 
+  pivot_longer(admit:reject) %>% 
+  
+  # plot
+  ggplot(aes(x = value, y = name, fill = name)) +
+  stat_halfeye(point_interval = median_qi, .width = .95,
+               color = wes_palette("Moonrise2")[4]) +
+  scale_fill_manual(values = wes_palette("Moonrise2")[1:2]) +
+  labs(title = " Mean admit/reject rates across departments",
+       x = "# applications",
+       y = NULL) +
+  theme(axis.ticks.y = element_blank(),
+        legend.position = "none")
+```
+
+```{r}
+summary(b11.binom)$fixed
+```
+
+```{r}
+summary(b11.pois)$fixed
+```
+
+```{r}
+fixef(b11.binom)[, "Estimate"] %>%
+  inv_logit_scaled()
+```
+
+```{r}
+k <- 
+  fixef(b11.pois) %>%
+  as.numeric()
+
+exp(k[1]) / (exp(k[1]) + exp(k[2]))
+```
+
+The formula fo what we just did in code is
+$$
+p_{admit} = \frac{\lambda_{1}}{\lambda_{1} + \lambda_{2}} = \frac{\text{exp}(\alpha_{1})}{\text{exp}(\alpha_{1}) + \text{exp}(\alpha_{2})}.
+$$
+
+```{r}
+# wrangle
+bind_cols(
+  as_draws_df(b11.pois) %>% 
+    transmute(`the Poisson`  = exp(b_admit_Intercept) / (exp(b_admit_Intercept) + exp(b_rej_Intercept))),
+  as_draws_df(b11.binom) %>% 
+    transmute(`the binomial` = inv_logit_scaled(b_Intercept))
+  ) %>% 
+  pivot_longer(everything()) %>% 
+  
+  # plot
+  ggplot(aes(x = value, y = name, fill = name)) +
+  stat_halfeye(point_interval = median_qi, .width = c(.95, .5),
+               color = wes_palette("Moonrise2")[4]) +
+  scale_fill_manual(values = c(wes_palette("Moonrise2")[2:1])) +
+  labs(title = "Two models, same marginal posterior",
+       x = "admissions probability",
+       y = NULL) +
+  coord_cartesian(ylim = c(1.5, 2.33)) +
+  theme(axis.text.y = element_text(hjust = 0),
+        axis.ticks.y = element_blank(),
+        legend.position = "none")
+```
+
+## 11.5 Bonus: Survival analysis
+```{r}
+data(AustinCats, package = "rethinking")
+d <- AustinCats
+rm(AustinCats)
+
+glimpse(d)
+```
+```{r}
+d %>% 
+  count(color) %>% 
+  slice(1:10)
+```
+
+```{r}
+d <-
+  d %>% 
+  mutate(black = ifelse(color == "Black", "black", "other"))
+
+d %>% 
+  count(black) %>% 
+  mutate(percent = 100 * n / sum(n)) %>% 
+  mutate(label = str_c(round(percent, digits = 1), "%")) %>% 
+  
+  ggplot(aes(y = black)) +
+  geom_col(aes(x = n, fill = black)) +
+  geom_text(aes(x = n - 250, label = label),
+            color = wes_palette("Moonrise2")[3],
+            family = "Times", hjust = 1) +
+  scale_fill_manual(values = wes_palette("Moonrise2")[c(4, 1)], breaks = NULL) +
+  scale_x_continuous(expression(italic(n)), breaks = c(0, count(d, black) %>% pull(n))) +
+  labs(title = "Cat color",
+       y = NULL) +
+  theme(axis.ticks.y = element_blank())
+```
+
+Another variable we need to consider is the out_event.
+```{r}
+d %>% count(out_event)
+```
+
+```{r}
+d <-
+  d %>% 
+  mutate(adopted = ifelse(out_event == "Adoption", 1, 0),
+         censored = ifelse(out_event != "Adoption", 1, 0))
+
+glimpse(d)
+```
+
+```{r}
+d %>% 
+  mutate(censored = factor(censored)) %>% 
+  filter(days_to_event < 300) %>% 
+  
+  ggplot(aes(x = days_to_event, y = censored)) +
+  # let's just mark off the 50% intervals
+  stat_halfeye(.width = .5, fill = wes_palette("Moonrise2")[2], height = 4) +
+  scale_y_discrete(NULL, labels = c("censored == 0", "censored == 1")) +
+  coord_cartesian(ylim = c(1.5, 5.1)) +
+  theme(axis.ticks.y = element_blank())
+```
+
+```{r}
+b11.15 <-
+  brm(data = d,
+      family = exponential,
+      days_to_event | cens(censored) ~ 0 + black,
+      prior(normal(0, 1), class = b),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 11,
+      file = "fits/b11.15")
+```
+
+```{r}
+print(b11.15)
+```
+
+Here are the posterior means for our two $\lambda$'s.
+```{r}
+1 / exp(fixef(b11.15)[, -2])
+```
+
+```{r}
+# annotation
+text <-
+  tibble(color = c("black", "other"),
+         days = c(40, 34),
+         p = c(.55, .45),
+         label = c("black cats", "other cats"),
+         hjust = c(0, 1))
+
+# wrangle
+f <-
+  fixef(b11.15) %>% 
+  data.frame() %>% 
+  rownames_to_column() %>% 
+  mutate(color = str_remove(rowname, "black")) %>% 
+  expand_grid(days = 0:100) %>% 
+  mutate(m = 1 - pexp(days, rate = 1 / exp(Estimate)),
+         ll = 1 - pexp(days, rate = 1 / exp(Q2.5)),
+         ul = 1 - pexp(days, rate = 1 / exp(Q97.5)))
+
+# plot!
+f %>% 
+  ggplot(aes(x = days)) +
+  geom_hline(yintercept = .5, linetype = 3, color = wes_palette("Moonrise2")[2]) +
+  geom_ribbon(aes(ymin = ll, ymax = ul, fill = color),
+              alpha = 1/2) +
+  geom_line(aes(y = m, color = color)) +
+  geom_text(data = text,
+            aes(y = p, label = label, hjust = hjust, color = color),
+            family = "Times") +
+  scale_fill_manual(values = wes_palette("Moonrise2")[c(4, 1)], breaks = NULL) +
+  scale_color_manual(values = wes_palette("Moonrise2")[c(4, 1)], breaks = NULL) +
+  scale_y_continuous("proportion remaining", breaks = c(0, .5, 1), limits = 0:1) +
+  xlab("days to adoption")
+```
+
+```{r}
+qexp(p = .5, rate = 1 / exp(fixef(b11.15)[1, 1]))
+```
+
+```{r}
+# wrangle
+post <-
+  as_draws_df(b11.15) %>% 
+  pivot_longer(starts_with("b_")) %>% 
+  mutate(color = str_remove(name, "b_black"),
+         days  = qexp(p = .5, rate = 1 / exp(value))) 
+
+# axis breaks
+medians <-
+  group_by(post, color) %>% 
+  summarise(med = median(days)) %>% 
+  pull(med) %>% 
+  round(., digits = 1)
+
+# plot!
+post %>% 
+  ggplot(aes(x = days, y = color)) +
+  stat_halfeye(.width = .95, fill = wes_palette("Moonrise2")[2], height = 4) +
+  scale_x_continuous("days untill 50% are adopted",
+                     breaks = c(30, medians, 45), labels = c("30", medians, "45"),
+                     limits = c(30, 45)) +
+  ylab(NULL) +
+  coord_cartesian(ylim = c(1.5, 5.1)) +
+  theme(axis.ticks.y = element_blank())
 ```
 
