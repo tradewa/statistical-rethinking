@@ -4,184 +4,183 @@ format: html
 ---
 
 ```{r}
-rm(list = ls())
-library(tidybayes)
 library(tidyverse)
-library(rethinking)
-library(scales)
+library(tidybayes)
 ```
 
-# Easy problems
+## 1.2 Exercises
 ```{r}
-n_success <- 6
-n_trials <- 9
-
 d <-
   tibble(p_grid = seq(from = 0, to = 1, length.out = 1000),
-         prior = rep(1, 1000)) |> 
-  mutate(likelihood = dbinom(n_success, size = n_trials, prob = p_grid)) |> 
-  mutate(posterior = (likelihood * prior) / sum(likelihood * prior))
+         prior = 1,
+         likelihood = dbinom(6, size = 9, prob = p_grid),
+         posterior = (likelihood * prior) / sum(likelihood * prior))
 
 set.seed(100)
 
-n_samples <- 1e4
-
-samples <- slice_sample(d, n = n_samples, weight_by = posterior, replace = T) |> 
-  arrange(p_grid)
+samples <-
+  slice_sample(d, n = 1e4, weight_by = posterior, replace = TRUE)
 ```
 
-**3E1**
+Density of sample
 ```{r}
-samples |> 
-  filter(p_grid < .2) |> 
-  summarize(mean = n() / n_samples)
+samples %>% 
+  ggplot(aes(x = p_grid)) +
+  geom_area(aes(y = posterior), color = "gray75") +
+  geom_line(aes(y = posterior)) +
+  ggtitle("Sample Posterior Distribution") +
+  scale_x_continuous("probability", breaks = c(0, .25, .5, .75, 1)) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  theme_bw()
 ```
 
-**3E2**
+3E1. How much posterior probability lies below p = 0.2
 ```{r}
-samples |> 
-  filter(p_grid > .8) |> 
-  summarize(mean = n() / n_samples)
-
+sum(samples$p_grid < 0.2) / nrow(samples)
 ```
 
-**3E3**
+3E2. How much posterior probability les above p = 0.8
 ```{r}
-samples |> 
-  filter(p_grid > .2 & p_grid < .8) |> 
-  summarize(mean = n() / n_samples)
+sum(samples$p_grid > 0.8) / nrow(samples)
 ```
 
-**3E4**
+3E3. How much posterior probability lies between p = 0.2 and p = 0.8
 ```{r}
-samples |> 
-  pull(p_grid) |> 
-  quantile(prob = .2)
+sum(samples$p_grid < 0.8 & samples$p_grid > 0.2) / nrow(samples)
 ```
 
-**3E5**
+3E4. 20% of the posterior probability lies below which value of p?
 ```{r}
-samples |> 
-  pull(p_grid) |> 
-  quantile(prob = .8)
+quantile(samples$p_grid, probs = 0.2)
 ```
 
-**3E6**
+3E5. 20% of the posterior probability lies above which value of p?
 ```{r}
-mode_hdi(samples$p_grid, .width = .66)
+quantile(samples$p_grid, probs = .8)
 ```
 
-**3E7**
+3E6. Which values of p contain the narrowest interval equal to 66% of the posterior probability?
 ```{r}
-median_qi(samples$p_grid, .width = .66)
+mean_hdi(samples$p_grid, .width = .66) %>% 
+  select(ymin, ymax)
+```
+3E7. Which values of p contain 66% of the posterior probability, assuming equal posterior probability both below and above the interval
+```{r}
+mean_qi(samples$p_grid, .width = .66) %>% 
+  select(ymin, ymax) %>% 
+  round(digits = 3)
 ```
 
-# Medium problems
-**3M1**
+3M1. Suppose the globe tossing data had turned out to be 8 water in 15 tosses. Construct the posterior distribution, using grid approximation. Use the same flat prior as above. 
 ```{r}
-n_success <- 8
-n_trials <- 15
+d <-
+  tibble(p_grid = seq(from = 0, to = 1, length.out = 1000),
+         prior = 1,
+         likelihood = dbinom(8, size = 15, prob = p_grid),
+         posterior = (likelihood * prior) / sum(likelihood * prior))
 
-(
-  d <-
-    tibble(p_grid = seq(from = 0, to = 1, length.out = 1e4),
-           prior = rep(1, 1e4)) |> 
-    mutate(likelihood = dbinom(n_success, size = n_trials, prob = p_grid)) |> 
-    mutate(posterior = (likelihood * prior) / sum(likelihood * prior))
-)
-
-d |> 
+d %>% 
   ggplot(aes(x = p_grid, y = posterior)) +
-  geom_point() +
   geom_line() +
-  labs(x = "Proportion Water (p)", y = "Posterior Density")
+  scale_x_continuous("Proportion water (p)") +
+  theme_minimal()
 ```
 
-**3M2**
+3M2. Draw 10k samples from the grid approximation from above. Then use the samples to calculate the 90% HPDI for p
 ```{r}
 set.seed(101)
-samples <-
-  slice_sample(d, n = 1e4, weight_by = posterior, replace = T)
 
-samples |> 
-  pull(p_grid) |> 
-  mode_hdi(.width = .90)
+samples <-
+  d %>% 
+  slice_sample(n = 1e4, weight_by = posterior, replace = TRUE)
+
+samples$p_grid %>% 
+  mean_hdi(.width = .90)
 ```
-**3M3**
+
+3M3. Construct a posterior predictive check for this model and data. This means simulate the distribution of samples, averaging over the posterior uncertainty in p. What is the probability of observing 8 water in 15 tosses?
 ```{r}
 w <- rbinom(1e4, size = 15, prob = samples$p_grid)
+
 mean(w == 8)
 ```
 
-**3M4**
+3M4. Using the posterior distribution constructed from the new (8/15) data, now calculate the probability of observing 6 water in 9 tosses.
 ```{r}
 w <- rbinom(1e4, size = 9, prob = samples$p_grid)
+
 mean(w == 6)
 ```
 
-**3M5**
+3M5. Start over at 3M1, but now use a prior that is zero below p = 0.5 and a constant above p = 0.5. This corresponds to prior information that a majority of the Earth's surface is water. Repeat each problem above and compare the inferences (using both priors) to the true value p = 0.7
 ```{r}
-
 # 3M5.1
-d <-
-  tibble(p_grid = seq(from = 0, to = 1, length.out = 1e4),
-         prior = ifelse(p_grid < 0.5, 0, 1)) |> 
-  mutate(likelihood = dbinom(n_success, size = n_trials, prob = p_grid)) |> 
-  mutate(posterior = (likelihood * prior) / sum(likelihood * prior))
+d2 <-
+  tibble(p_grid = seq(from = 0, to = 1, length.out = 1000),
+         prior = case_when(p_grid < 0.5 ~ 0L,
+                           TRUE ~ 1L),
+         likelihood = dbinom(8, size = 15, prob = p_grid),
+         posterior = (likelihood * prior) / sum(likelihood * prior))
 
-d |> 
+d2 %>% 
   ggplot(aes(x = p_grid, y = posterior)) +
-  geom_point() +
   geom_line() +
-  labs(x = "Proportion of water (p)", y = "Posterior density")
+  scale_x_continuous("Proportion water (p)") +
+  theme_minimal()
+```
 
+```{r}
 # 3M5.2
-samples <-
-  slice_sample(d, weight_by = posterior, n = 1e4, replace = T)
+set.seed(101)
 
-samples |> 
-  mode_hdi(.width = .9)
+samples <-
+  d2 %>% 
+  slice_sample(n = 1e4, weight_by = posterior, replace = TRUE)
+
+samples$p_grid %>% 
+  mean_hdi(.width = .90)
 
 # 3M5.3
 w <- rbinom(1e4, size = 15, prob = samples$p_grid)
 mean(w == 8)
 
-# 3M5.4
+# 3M5.3
 w <- rbinom(1e4, size = 9, prob = samples$p_grid)
 mean(w == 6)
 ```
 
-**3M6** Suppose you want to estimate the Earth’s proportion of water very precisely. Specifically, you want the 99% percentile interval of the posterior distribution of p to be only 0.05 wide. This means the distance between the upper and lower bound of the interval should be 0.05. How many times will you have to toss the globe to do this?
+3M6. Suppose you want to estimate the Earth's proportion of water very precisely. Specifically, you want the 99% percentile interval of the posterior distribution of p to be only 0.05 wide. This means the distance between the upper and lower bound of the interval should be 0.05. How many times will you have to toss the globe to do this?
 ```{r}
 single_sim <- function(tosses, prior_type = c("uniform", "step")){
   prior_type <- match.arg(prior_type)
-  obs <- rbinom(1, size = tosses, prob = .7)
+  obs <- rbinom(1, size = tosses, prob = 0.7)
   
   p_grid <- seq(from = 0, to = 1, length.out = 1000)
   prior <- rep(1, 1000)
   if(prior_type == "step") prior[1:500] <- 0
   
   likelihood <- dbinom(obs, size = tosses, prob = p_grid)
-  posterior <- likelihood * prior
-  posterior <- posterior / sum(posterior)
+  posterior <- (likelihood * prior) / sum(likelihood * prior)
   
-  samples <- sample(p_grid, prob = posterior, size = 1e4, replace = T)
-  interval <- PI(samples, prob = .99)
+  samples <- sample(p_grid, prob = posterior, size = 1e4, replace = TRUE)
+  interval <- rethinking::PI(samples, prob = .99)
   width <- interval[2] - interval[1]
 }
 
 single_cond <- function(tosses, prior_type, reps = 100){
   tibble(tosses = tosses,
          prior_type = prior_type,
-         width = map_dbl(seq_len(reps), ~single_sim(tosses = tosses,
-                                                    prior_type = prior_type)))
+         width = map_dbl(seq_len(reps), 
+                         ~single_sim(tosses = tosses,
+                                     prior_type = prior_type)))
 }
 
-simulation <- crossing(tosses = seq(1000, 5000, by = 100),
-                       prior_type = c("uniform", "step")) |> 
-  pmap_dfr(single_cond, reps = 100) |> 
-  group_by(tosses, prior_type) |> 
-  summarize(avg_width = mean(width), .groups = "drop") |> 
+simulation <-
+  crossing(tosses = seq(1000, 5000, by = 100),
+           prior_type = c("uniform", "step")) %>% 
+  pmap_dfr(single_cond, reps = 100) %>% 
+  group_by(tosses, prior_type) %>% 
+  summarize(avg_width = mean(width), .groups = "drop") %>% 
   mutate(prior_type = case_when(prior_type == "uniform" ~ "Uniform Prior",
                                 prior_type == "step" ~ "Step Prior"),
          prior_type = factor(prior_type, levels = c("Uniform Prior",
@@ -190,124 +189,181 @@ simulation <- crossing(tosses = seq(1000, 5000, by = 100),
 ggplot(simulation, aes(x = tosses, y = avg_width)) +
   facet_wrap(~prior_type, nrow = 1) +
   geom_point() +
-  geom_line() +
-  scale_x_continuous(labels = comma)
+  geom_line() + 
   labs(x = "Tosses", y = "Average Interval Width") +
   theme(panel.spacing.x = unit(2, "lines"))
 ```
 
-# Hard problems
-
-Data preparation
+Hard
 ```{r}
-rm(list = ls())
-data(homeworkch3)
+data(homeworkch3, package = "rethinking")
+birth1
+birth2
 ```
 
-**3H1.** Using grid approximation, compute the posterior distribution for the probability of a birth being a boy. Assume a uniform prior probability. Which parameter value maximizes the posterior probability?
+3H1. Using grid approximation, compute the posterior distribution for the probability of a birth being a boy. Assume a uniform prior probability. Which parameter value maximizes the posterior probability?
 ```{r}
-n_boy <- sum(birth1) + sum(birth2)
-n_data <- length(birth1) + length(birth2)
+b <- sum(birth1) + sum(birth2)
+n <- length(birth1) + length(birth2)
 
-(
-  d <-
-  tibble(p_grid = seq(from = 0, to = 1, length.out = 1e4),
-         prior = 1) |> 
-    mutate(likelihood = dbinom(n_boy, size = n_data, prob = p_grid)) |> 
-    mutate(posterior = (likelihood * prior) / sum(likelihood * prior))
-)
+d <-
+  tibble(p_grid = seq(from = 0, to = 1, length.out = 1000),
+         prior = 1,
+         likelihood = dbinom(b, size = n, prob = p_grid),
+         posterior = (likelihood * prior) / sum(likelihood * prior))
 
-d |> slice_max(posterior)
-
-d |> 
-  ggplot(aes(x = p_grid, y = posterior)) +
-  geom_line() +
-  labs(x = "Proportion boys (p)", y = "Posterior Density")
+d %>% 
+  slice_max(posterior, n = 1)
 ```
 
-**3H2.** Using the sample function, draw 10,000 random parameter values from the posterior distribution you calculated above. Use these sample to estimate the 50%, 89%, and 97% highest posterior density intervals.
+3H2. Using the sample function, draw 10k random parameter values from the posterior distribution you calculated above. Use these sample to estimate the 50%, 89%, and 97% highest posterior density intervals.
 ```{r}
 samples <-
-  slice_sample(d, n = 10000, weight_by = posterior, replace = T)
+  d %>% 
+  slice_sample(n = 1e4, weight_by = posterior, replace = TRUE)
 
-mode_hdi(samples$p_grid, .width = c(.5, .89, .97))
+# 50%, 89%, 97% HDPI
+bind_rows(samples$p_grid %>% mean_hdi(.width = .5),
+          samples$p_grid %>% mean_hdi(.width = .89),
+          samples$p_grid %>% mean_hdi(.width = .97)) %>% 
+  mutate_if(is.double, round, digits = 3)
 ```
 
-**3H3.** Use rbinom to simulate 10,000 replicates of 200 births. You should end up with 10,000 numbers, each one a count of boys out of 200 births. Compare the distribution of predicted numbers of boys to the actual count in the data (111 boys out of 200 births). There are many good ways to visualize the simulations, but the dens command (part of the rethinking package) is prbably the easiest way in this case. Does it look like the model fits the data well? That is, does the distribution of predictions include the actual observation as a central, likely outcome?
+3H3. Use rbinom to simulate 10,000 replicates of 200 births. You should end up with 10,000 numbers, each one a count of boys out of 200 births. Compare the distribution of predicted numbers of boys to the actual count in the data (111 boys out of 200 births). There are many good ways to visualize the simulations, but the dens command (part of the rethinking package) is prbably the easiest way in this case. Does it look like the model fits the data well? That is, does the distribution of predictions include the actual observation as a central, likely outcome?
 ```{r}
-sim_boys <- rbinom(1e4, size = 200, prob = samples$p_grid)
+set.seed(300)
 
-ggplot(mapping = aes(x = sim_boys)) +
-  geom_histogram() +
-  geom_vline(xintercept = n_boy, color = "red", linetype = 4)
+sim <- 
+  tibble(b = rbinom(1e4, size = 200, prob = samples$p_grid))
+
+sim %>% 
+  ggplot(aes(x = b)) +
+  geom_histogram(binwidth = 1, center = 0) +
+  geom_vline(xintercept = 111, linetype = "dashed",
+             color = "red")
 ```
 
-**3H4.** Now compare 10,000 counts of boys from 100 simulated first borns only the number of boys in the first births, birth1. How does the model look in this light?
+3H4. Now compare 10,000 counts of boys from 100 simulated first borns only the number of boys in the first births, birth1. How does the model look in this light?
 ```{r}
-n_boys_1 <- sum(birth1)
-sim_boys <- rbinom(1e4, size = 100, prob = samples$p_grid)
+set.seed(301)
+sim <- 
+  tibble(b = rbinom(1e4, size = 100, prob = samples$p_grid))
 
-ggplot(mapping = aes(x = sim_boys)) +
-  geom_histogram() +
-  geom_vline(xintercept = n_boys_1, color = "red", linetype = 4)
+sim %>% 
+  ggplot(aes(x = b)) +
+  geom_histogram(binwidth = 1, center = 0) +
+  geom_vline(xintercept = sum(birth1), linetype = "dashed",
+             color = "red")
 ```
 
-**3H5.** The model assumes that sex of first and second births are independent. To check this assumption, focus now on second births that followed female first borns. Compare 10,000 simulated conts of boys to only those second births that followed girls. To do this correctly, you need to count the number of first borns who were girls and simulate that many births, 10,000 times. Compare the counts of boys in your simulations to the actual observed count of boys following girls. How does the model look in this light? Any guesses what is going on in these data?
+3H5. The model assumes that sex of first and second births are independent. To check this assumption, focus now on second births that followed female first borns. Compare 10,000 simulated counts of boys to only those second births that followed girls. To do this correctly, you need to count the number of first borns who were girls and simulate that many births, 10,000 times. Compare the counts of boys in your simulations to the actual observed count of boys following girls. How does the model look in this light? Any guesses what is going on in these data?
 ```{r}
-n_f1_b2 <- sum(birth2[which(birth1 == 0)])
-n_f1 <- length(birth1) - sum(birth1)
+g <- length(birth1) - sum(birth1)
 
-sim_f1_b2 <- rbinom(1e4, size = n_f1, prob = samples$p_grid)
+sim <- 
+  tibble(b = rbinom(1e4, size = g, prob = samples$p_grid))
 
-ggplot(mapping = aes(x = sim_f1_b2)) +
-  geom_histogram() +
-  geom_vline(xintercept = n_f1_b2, color = "red", linetype = 4)
+b2 <- sum(birth2[which(birth1 == 0)])
+
+sim %>% 
+  ggplot(aes(x = b)) +
+  geom_histogram(binwidth = 1) +
+  geom_vline(xintercept = b2, color = "red", linetype = "dashed")
 ```
 
 ## 1.3 Homework
-**1.** Suppose the globe tossing data (Chapter 2) had turned out to be 4 water and 11 land. Construct the posterior distribution, using grid approximation. Use the same flat prior as in the book.
+1. Suppose the globe tossing data (Chapter 2) had turned out to be 4 water and 11 land. Construct the posterior distribution, using grid approximation. Use the same flat prior as in the book.
 ```{r}
-dist <-
-  tibble(p_grid = seq(from = 0, to = 1, length.out = 1e3),
-         prior = 1) |> 
-  mutate(likelihood = dbinom(4, size = 15, prob = p_grid)) |> 
-  mutate(posterior = (likelihood * prior) / sum(likelihood * prior))
-
-dist
+(
+  d <-
+  tibble(p_grid = seq(from = 0, to = 1, length.out = 1000),
+         prior = 1,
+         likelihood = dbinom(4, size = 11, prob = p_grid),
+         posterior = (likelihood * prior) / sum(likelihood * prior))
+)
 ```
 
 ```{r}
-dist |> 
-  slice_sample(n = 1e4, weight_by = posterior, replace = T) |> 
+set.seed(123)
+
+d %>% 
+  slice_sample(n = 1e4, weight_by = posterior, replace = TRUE) %>% 
   ggplot(aes(x = p_grid)) +
-  stat_histinterval(.width = c(.67, .89, .97), breaks = seq(0, 1, .02), point_interval = mean_hdci)
-  labs(x = "Proportion of Water (p)", y = "Posterior Density")
+  stat_histinterval(.width = c(.67, .89, .97), 
+                    breaks = seq(0, 1, .02),
+                    point_interval = mean_hdci) +
+  labs(x = "Proportion Water (p)", y = "Posterior Density")
 ```
 
-**2.** Now suppose the data are 4 water and 2 land. Compute the posterior again, but this time use a prior that is zero below p = 0.5 and a constant above p = 0.5. This corresponds to prior information that a majority of the Earth’s surface is water.
+2. Now suppose the data are 4 water and 2 land. Compute the posterior again, but this time use a prior that is zero below p = 0.5 and a constant above p = 0.5. This corresponds to prior information that a majority of the Earth’s surface is water.
 ```{r}
-dist <-
-  tibble(p_grid = seq(from = 0, to = 1, length.out = 1e3),
-         prior = ifelse(p_grid < .5, 0, 1)) |> 
-  mutate(likelihood = dbinom(4, size = 6, prob = p_grid)) |> 
-  mutate(posterior = (likelihood * prior) / sum(likelihood * prior))
+(
+  d <-
+  tibble(p_grid = seq(from = 0, to = 1, length.out = 1000),
+         prior = rep(c(0, 1), each = 500),
+         likelihood = dbinom(4, size = 6, prob = p_grid),
+         posterior = (likelihood * prior) / sum(likelihood * prior))
+)
+```
+```{r}
+set.seed(123)
 
-dist |> 
-  slice_sample(n = 1e4, weight_by = posterior, replace = T) |> 
+d %>% 
+  slice_sample(n = 1e4, weight_by = posterior, replace = TRUE) %>% 
   ggplot(aes(x = p_grid)) +
-  stat_histinterval(.width = c(.67, .89, .97), breaks = seq(0, 1, .02), point_interval = mean_hdci)
-  labs(x = "Proportion of Water (p)", y = "Posterior Density")
+  stat_histinterval(.width = c(.67, .89, .97),
+                    breaks = seq(0, 1, .02),
+                    point_interval = mean_hdci) +
+  labs(x = "Proportion Water (p)", y = "Posterior Density")
 ```
 
-**3.** For the posterior distribution from 2, compute 89% percentile and HPDI intervals. Compare the widths of these intervals. Which is wider? Why? If you had only the information in the interval, what might you misunderstand about the shape of the posterior distribution?
+3. For the posterior distribution from 2, compute 89% percentile and HPDI intervals. Compare the widths of these intervals. Which is wider? Why? If you had only the information in the interval, what might you misunderstand about the shape of the posterior distribution?
 ```{r}
-intervals <-
-  dist |> 
-  slice_sample(n = 1e4, weight_by = posterior, replace = T) |> 
-  reframe(bound = c("lower", "upper"),
-            pi = PI(p_grid, prob = .89),
-            hpdi = HPDI(p_grid, prob = .89))
+set.seed(123)
 
-intervals
+samples <-
+  d %>% 
+  slice_sample(n = 1e4, weight_by = posterior, replace = TRUE) 
+samples$p_grid %>% 
+  mean_qi(.width = .89) %>% 
+  select(ymin, ymax)
+
+samples$p_grid %>% 
+  mean_hdi(.width = .89) %>% 
+  select(ymin, ymax)
+```
+
+4. OPTIONAL CHALLENGE. Suppose there is bias in sampling so that Land is more likely than Water to be recorded. Specifically, assume that 1-in-5 (20%) of Water samples are accidentally recorded instead as “Land.” First, write a generative simulation of this sampling process. Assuming the true proportion of Water is 0.70, what proportion does your simulation tend to produce instead? Second, using a simulated sample of 20 tosses, compute the unbiased posterior distribution of the true proportion of water.
+```{r}
+biased_globe <- function(tosses = 100, true_prop = .7, bias = 0.2){
+  true_trials <- rbinom(n = tosses, size = 1, prob = true_prop)
+  bias_sim <- runif(n = tosses, min = 0, max = 1)
+  
+  bias_trials <- true_trials
+  bias_trials[which(bias_sim < bias)] <- 0L
+  sum(bias_trials)
+}
+```
+
+```{r}
+bias_prop <- map_int(seq_len(1000),
+                     ~biased_globe(tosses = 100,
+                                   true_prop = 0.7,
+                                   bias = .2))
+
+ggplot() +
+  stat_histinterval(aes(x = bias_prop / 100),
+                    .width = c(.67, .89, .97),
+                    breaks = seq(0, 1, by = .01)) +
+  geom_vline(aes(xintercept = .7), linetype = "dashed",
+             color = "red") +
+  expand_limits(x = c(0, 1)) +
+  labs(x = "Proportion Water (p)", y = "Simulations")
+```
+
+```{r}
+set.seed(123)
+biased_dat <- biased_globe(tosses = 20)
+biased_dat
 ```
 
