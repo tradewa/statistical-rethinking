@@ -1780,3 +1780,303 @@ rbind(f[, , 1],
   facet_wrap(~ career)
 ```
 
+```{r}
+text <-
+  tibble(family_income = c(.45, .3, .15),
+         proportion = c(.65, .8, .95),
+         label = str_c("career: ", 3:1),
+         color = c("a", "a", "b"))
+
+# wrangle
+rbind(f[, , 1],
+      f[, , 2],
+      f[, , 3]) %>% 
+  data.frame() %>% 
+  bind_cols(expand_grid(career = 1:3, nd)) %>% 
+  group_by(family_income) %>% 
+  mutate(proportion = Estimate / sum(Estimate),
+         career = factor(career)) %>% 
+  
+  # plot!
+  ggplot(aes(x = family_income, y = proportion)) +
+  geom_area(aes(fill = career)) +
+  geom_text(data = text,
+            aes(label = label, color = color),
+            family = "Times", size = 4.25) +
+  scale_color_manual(values = wes_palette("Moonrise2")[4:3]) +
+  scale_fill_manual(values = wes_palette("Moonrise2")[c(4, 2, 1)]) +
+  theme(legend.position = "none")
+```
+
+#### 11.3.2.1 Multinomial in disguise as Poisson.
+```{r}
+data("UCBadmit", package = "rethinking")
+d <- UCBadmit
+rm(UCBadmit)
+```
+
+```{r}
+# binomial model of overall admission probability
+b11.binom <-
+  brm(data = d,
+      family = binomial,
+      admit | trials(applications) ~ 1,
+      prior(normal(0, 1.5), class = Intercept),
+      iter = 2000, warmup = 1000, chains = 3, cores = 3,
+      seed = 11,
+      file = "fits/b11.binom")
+
+# Poisson model of overall admission rate and rejection rate
+b11.pois <-
+  brm(data = d %>%
+        mutate(rej = reject),  # 'reject' is a reserved word
+      family = poisson,
+      mvbind(admit, rej) ~ 1,
+      prior(normal(0, 1.5), class = Intercept),
+      iter = 2000, warmup = 1000, cores = 3, chains = 3,
+      seed = 11,
+      file = "fits/b11.pois")
+```
+
+```{r}
+# extract the samples
+post <- as_draws_df(b11.pois)
+
+# wrangle
+post %>% 
+  mutate(admit = exp(b_admit_Intercept),
+       reject = exp(b_rej_Intercept)) %>% 
+  pivot_longer(admit:reject) %>% 
+  
+  # plot
+  ggplot(aes(x = value, y = name, fill = name)) +
+  stat_halfeye(point_interval = median_qi, .width = .95,
+               color = wes_palette("Moonrise2")[4]) +
+  scale_fill_manual(values = wes_palette("Moonrise2")[1:2]) +
+  labs(title = "Mean admit/reject rates across departments",
+       x = "# applications",
+       y = NULL) +
+  theme(axis.ticks.y = element_blank(),
+        legend.position = "none")
+```
+
+Compare model summaries
+```{r}
+summary(b11.binom)$fixed
+```
+
+```{r}
+summary(b11.pois)$fixed
+```
+
+Here's the posterior mean for the probability of admission, based on b11.binom
+```{r}
+fixef(b11.binom)[, "Estimate"] %>% 
+  inv_logit_scaled()
+```
+
+Happily we get the same value within simulation error from model b11.pois
+```{r}
+k <-
+  fixef(b11.pois) %>% as.numeric()
+
+exp(k[1]) / (exp(k[1]) + exp(k[2]))
+```
+
+The formula for what we just did in code is 
+$$
+p_{admit} = \frac{\lambda_{1}}{\lambda_1 + \lambda_2} = \frac{\text{exp}(\alpha_1)}{\text{exp}(\alpha_1) + \text{exp}(\alpha_2)}
+$$
+
+To get a better appreciation on how well the two model types converge on the same solution, we might plot the full poster for admission probability from each.
+```{r}
+# wrangle
+bind_cols(
+  as_draws_df(b11.pois) %>% 
+    transmute(`the Poisson` = exp(b_admit_Intercept) / (exp(b_admit_Intercept) + exp(b_rej_Intercept))),
+  as_draws_df(b11.binom) %>% 
+    transmute(`the binomial` = inv_logit_scaled(b_Intercept))
+) %>% 
+  pivot_longer(everything()) %>% 
+  
+  # plot
+  ggplot(aes(x = value, y = name, fill = name)) +
+  stat_halfeye(point_interval = median_qi, 
+               .width = c(.95, 5), 
+               color = wes_palette("Moonrise2")[4]) +
+  scale_fill_manual(values = c(wes_palette("Moonrise2")[2:1])) +
+  labs(title = "Two models, same marginal posterior",
+       x = "admission probability",
+       y = NULL) +
+  coord_cartesian(ylim = c(1.5, 2.33)) +
+  theme(axis.text.y = element_text(hjust = 0),
+        axis.ticks.y = element_blank(),
+        legend.position = "none")
+```
+
+## 11.5 Bonus: Survival analysis
+```{r}
+data("AustinCats", package = "rethinking")
+d <- AustinCats
+rm(AustinCats)
+
+glimpse(d)
+```
+
+```{r}
+d %>% 
+  count(color) %>% 
+  slice(1:10)
+```
+
+```{r}
+d <-
+  d %>% 
+  mutate(black = ifelse(color == "Black", "black", "other"))
+
+d %>% 
+  count(black) %>% 
+  mutate(percent = 100 * n / sum(n)) %>% 
+  mutate(label = str_c(round(percent, digits = 1), "%")) %>% 
+  
+  ggplot(aes(y = black)) +
+  geom_col(aes(x = n, fill = black)) +
+  geom_text(aes(x = n - 250, label = label),
+            color = wes_palette("Moonrise2")[3],
+            family = "Times", hjust = 1) +
+  scale_fill_manual(values = wes_palette("Moonrise2")[c(4, 1)], breaks = NULL) +
+  scale_x_continuous(expression(italic(n)), 
+                     breaks = c(0, count(d, black) %>% 
+                                  pull(n))) +
+  labs(title = "Cat color", y = NULL) +
+  theme(axis.ticks.y = element_blank())
+```
+
+```{r}
+d %>% 
+  count(out_event)
+```
+
+```{r}
+d <-
+  d %>% 
+  mutate(adopted = ifelse(out_event == "Adoption", 1, 0),
+         censored = ifelse(out_event != "Adoption", 1, 0))
+
+glimpse(d)
+```
+
+```{r}
+d %>% 
+  mutate(censored = factor(censored)) %>% 
+  filter(days_to_event < 300) %>% 
+  
+  ggplot(aes(x = days_to_event, y = censored)) +
+  # let's just mark off the 50% intervals
+  stat_halfeye(.width = .5, 
+               fill = wes_palette("Moonrise2")[2],
+               height = 4) +
+  scale_y_discrete(NULL, labels = c("censored == 0", "censored == 1")) +
+  coord_cartesian(ylim = c(1.5, 5.1)) +
+  theme(axis.ticks.y = element_blank())
+```
+
+```{r}
+b11.15 <-
+  brm(data = d,
+      family = exponential,
+      days_to_event | cens(censored) ~ 0 + black,
+      prior(normal(0, 1), class = b),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 11,
+      file = "fits/b11.15")
+```
+
+```{r}
+print(b11.15)
+```
+
+Since we modeled log $\mu_i$, we need to transform our $\alpha$ paramaters back into the $\lambda$ metric using the formula
+$$
+\begin{align}
+\text{log}\mu & = \alpha_{\text{black}}, && \text{and} \\
+\lambda & = \frac{1}{\mu}, && \text{therefore} \\
+\lambda_{\text{black}} & = \frac{1}{\text{exp}(\alpha_{\text{black}})}.
+\end{align}
+$$
+
+Here are the posterior means for our two $\lambda$'s
+```{r}
+1 / exp(fixef(b11.15)[, -2])
+```
+
+```{r}
+# annotation
+text <-
+  tibble(color = c("black", "other"),
+         days  = c(40, 34),
+         p     = c(.55, .45),
+         label = c("black cats", "other cats"),
+         hjust = c(0, 1))
+
+# wrangle
+f <-
+  fixef(b11.15) %>% 
+  data.frame() %>% 
+  rownames_to_column() %>% 
+  mutate(color = str_remove(rowname, "black")) %>% 
+  expand_grid(days = 0:100) %>% 
+  mutate(m  = 1 - pexp(days, rate = 1 / exp(Estimate)),
+         ll = 1 - pexp(days, rate = 1 / exp(Q2.5)),
+         ul = 1 - pexp(days, rate = 1 / exp(Q97.5)))
+  
+# plot!
+f %>% 
+  ggplot(aes(x = days)) +
+  geom_hline(yintercept = .5, linetype = 3, color = wes_palette("Moonrise2")[2]) +
+  geom_ribbon(aes(ymin = ll, ymax = ul, fill = color),
+              alpha = 1/2) +
+  geom_line(aes(y = m, color = color)) +
+  geom_text(data = text,
+            aes(y = p, label = label, hjust = hjust, color = color),
+            family = "Times") +
+  scale_fill_manual(values = wes_palette("Moonrise2")[c(4, 1)], breaks = NULL) +
+  scale_color_manual(values = wes_palette("Moonrise2")[c(4, 1)], breaks = NULL) +
+  scale_y_continuous("proportion remaining", breaks = c(0, .5, 1), limits = 0:1) +
+  xlab("days to adoption")
+```
+
+```{r}
+qexp(p = .5, rate = 1 / exp(fixef(b11.15)[1, 1]))
+```
+
+```{r}
+# wrangle
+post <-
+  as_draws_df(b11.15) %>% 
+  pivot_longer(starts_with("b_")) %>% 
+  mutate(color = str_remove(name, "b_black"),
+         days = qexp(p = .5, rate = 1 / exp(value)))
+
+# axis breaks
+medians <-
+  group_by(post, color) %>% 
+  summarise(med = median(days)) %>% 
+  pull(med) %>% 
+  round(., digits = 1)
+
+# plot!
+post %>% 
+  ggplot(aes(x = days, y = color)) +
+  stat_halfeye(.width = .95, 
+               fill = wes_palette("Moonrise2")[2],
+               height = 4) +
+  scale_x_continuous("days until 50% are adopted",
+                     breaks = c(30, medians, 45),
+                     labels = c("30", medians, "45"),
+                     limits = c(30, 45)) +
+  ylab(NULL) +
+  coord_cartesian(ylim = c(1.5, 5.1)) +
+  theme(axis.ticks.y = element_blank())
+```
+
