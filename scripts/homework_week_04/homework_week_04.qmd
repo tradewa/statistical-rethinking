@@ -13,7 +13,7 @@ library(brms)
 d <- rethinking::sim_happiness(seed = 1977, N_years = 1000)
 
 dat <- d %>% 
-  filter(age > 17) %>% 
+  dplyr::filter(age > 17) %>% 
   mutate(a = (age - 18) / (65-18),
          mid = factor(married + 1, labels = c("single", "married")))
 
@@ -42,28 +42,35 @@ b6.10 <-
 ```
 
 ```{r}
-b6.9 <- add_criterion(b6.9, criterion = c("waic", "loo"))
-b6.10 <- add_criterion(b6.10, criterion = c("waic", "loo"))
+b6.9 <- add_criterion(b6.9, criterion = c("loo", "waic"))
+b6.10 <- add_criterion(b6.10, criterion = c("loo", "waic"))
 
-loo_compare(b6.9, b6.10, criterion = "waic")
 loo_compare(b6.9, b6.10, criterion = "loo")
+loo_compare(b6.9, b6.10, criterion = "waic")
 ```
 
 **2.** Reconsider the urban fox analysis from last week’s homework. On the basis of PSIS and WAIC scores, which combination of variables best predicts body weight (
 W
 , weight)? How would you interpret the estimates from the best scoring model?
 ```{r}
+rm(list = ls())
 data(foxes, package = "rethinking")
-fox_dat <- foxes %>% 
+d <- foxes
+rm(foxes)
+```
+
+
+```{r}
+d <-
+  d %>% 
   as_tibble() %>% 
   select(area, avgfood, weight, groupsize) %>% 
   mutate(across(everything(), rethinking::standardize))
 ```
 
 ```{r}
-# weight = avgfood + groupsize + area
 fox_1 <-
-  brm(data = fox_dat,
+  brm(data = d,
       family = gaussian,
       weight ~ 1 + avgfood + groupsize + area,
       prior = c(prior(normal(0, .2), class = Intercept),
@@ -73,9 +80,8 @@ fox_1 <-
       seed = 1234,
       file = "fits/w4h2-1")
 
-# weight = avgfood + groupsize
 fox_2 <-
-  brm(data = fox_dat,
+  brm(data = d,
       family = gaussian,
       weight ~ 1 + avgfood + groupsize,
       prior = c(prior(normal(0, .2), class = Intercept),
@@ -85,9 +91,8 @@ fox_2 <-
       seed = 1234,
       file = "fits/w4h2-2")
 
-# weight = groupsize + area
 fox_3 <-
-  brm(data = fox_dat,
+  brm(data = d,
       family = gaussian,
       weight ~ 1 + groupsize + area,
       prior = c(prior(normal(0, .2), class = Intercept),
@@ -97,9 +102,8 @@ fox_3 <-
       seed = 1234,
       file = "fits/w4h2-3")
 
-# weight = avgfood + area
 fox_4 <-
-  brm(data = fox_dat,
+  brm(data = d,
       family = gaussian,
       weight ~ 1 + avgfood + area,
       prior = c(prior(normal(0, .2), class = Intercept),
@@ -109,9 +113,8 @@ fox_4 <-
       seed = 1234,
       file = "fits/w4h2-4")
 
-# weight = area
 fox_5 <-
-  brm(data = fox_dat,
+  brm(data = d,
       family = gaussian,
       weight ~ 1 + area,
       prior = c(prior(normal(0, .2), class = Intercept),
@@ -120,32 +123,120 @@ fox_5 <-
       iter = 4000, warmup = 2000, chains = 4, cores = 4,
       seed = 1234,
       file = "fits/w4h2-5")
+```
 
+```{r}
 fox_1 <- add_criterion(fox_1, criterion = c("waic", "loo"))
 fox_2 <- add_criterion(fox_2, criterion = c("waic", "loo"))
 fox_3 <- add_criterion(fox_3, criterion = c("waic", "loo"))
 fox_4 <- add_criterion(fox_4, criterion = c("waic", "loo"))
 fox_5 <- add_criterion(fox_5, criterion = c("waic", "loo"))
 ```
-
 ```{r}
 loo_compare(fox_1, fox_2, fox_3, fox_4, fox_5, criterion = "waic")
 
 loo_compare(fox_1, fox_2, fox_3, fox_4, fox_5, criterion = "loo")
 ```
-
 ```{r}
 fixef(fox_4)
 ```
-
 ```{r}
 fixef(fox_1)
 ```
-**3.** OPTIONAL CHALLENGE
+3. Build a predictive model of the relationship shown on the cover of the book, the relationship between the timing of cherry blossoms and March temperature in the same year. The data are found in data(cherry_blossoms). Consider at least two functions to predict doy with temp. Compare them with PSIS or WAIC.
+
+Suppose March temperatures reach 9 degrees by the year 2050. What does your best model predict for the predictive distribution of the day-in-year that the cherry trees will blossom?
 ```{r}
+rm(list = ls())
+library(splines)
+data(cherry_blossoms, package = "rethinking")
+d <- cherry_blossoms
+rm(cherry_blossoms)
+```
+
+```{r}
+d <- d %>% 
+  select(doy, temp) %>% 
+  drop_na(everything())
+```
+
+```{r}
+linear <-
+  brm(data = d,
+      family = gaussian,
+      doy ~ 1 + temp,
+      prior = c(prior(normal(100, 10), class = Intercept),
+                prior(normal(0, 10), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/w4h3-1")
+
+spline_1 <-
+  brm(data = d,
+      family = gaussian,
+      doy ~ 1 + s(temp, bs = "bs", k = 30),
+      prior = c(prior(normal(100, 10), class = Intercept),
+                prior(normal(0, 10), class = b),
+                prior(student_t(3, 0, 5.9), class = sds),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/ww4h3-2")
+
+spline_2 <-
+  brm(data = d,
+      family = gaussian,
+      doy ~ 1 + s(temp, bs = "bs", k = 30),
+      prior = c(prior(normal(100, 10), class = Intercept),
+                prior(normal(0, 2), class = b),
+                prior(student_t(3, 0, 5.9), class = sds),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/ww4h3-3")
+```
+
+```{r}
+linear <- add_criterion(linear, criterion = c("waic", "loo"))
+spline_1 <- add_criterion(spline_1, criterion = c("waic", "loo"))
+spline_2 <- add_criterion(spline_2, criterion = c("waic", "loo"))
+```
+```{r}
+loo_compare(linear, spline_1, spline_2, criterion = "waic")
+loo_compare(linear, spline_1, spline_2, criterion = "loo")
+```
+```{r}
+new_dat <- tibble(temp = 9)
+
+preds <-
+  new_dat %>% 
+  add_predicted_draws(linear)
+
+mean_hdi(preds$.prediction, .width = c(0.89))
+
+ggplot(preds, aes(x = .prediction)) +
+  stat_halfeye(.width = c(.67, .89, .97)) +
+  labs(x = "Day of Year", y = "Posterior Predictive Density") +
+  theme_minimal()
+```
+
+
+4 - OPTIONAL CHALLENGE. The data in data(Dinosaurs) are body mass estimates at different estimated ages for six different dinosaur species. See ?Dinosaurs for more details. Choose one or more of these species (at least one, but as many as you like) and model its growth. To be precise: Make a predictive model of body mass using age as a predictor. Consider two or more model types for the function relating age to body mass and score each using PSIS and WAIC.
+
+Which model do you think is best, on predictive grounds? On scientific grounds? If your answers to these questions differ, why?
+
+This is a challenging exercise, because the data are so scarce. But it is also a realistic example, because people publish Nature papers with even less data. So do your best, and I look forward to seeing your growth curves.
+```{r}
+rm(list = ls())
 data(Dinosaurs, package = "rethinking")
+dino_dat <- Dinosaurs
+rm(Dinosaurs)
+```
+
+```{r}
 dino_dat <-
-  Dinosaurs %>% 
+  dino_dat %>% 
   as_tibble() %>% 
   select(species_name = species,
          species = sp_id,
@@ -156,20 +247,10 @@ dino_dat <-
          species = factor(species)) %>% 
   ungroup()
 
-one_dino <- filter(dino_dat, species == 1)
+one_dino <- dplyr::filter(dino_dat, species == 1)
 ```
 
-Exploratory data analysis
 ```{r}
-one_dino %>% 
-  ggplot(aes(x = age, y = mass)) +
-  geom_point(size = 2, shape = 1) +
-  theme_bw()
-```
-
-We'll choose to model sp_id 3 (Massospondylus carinatus) and 4 (Psittacosaurus mongoliensis) because they have the most data available
-```{r}
-# Mass ~ 1 + Age for sp_id = 3
 one_dino_linear <-
   brm(data = one_dino,
       family = gaussian,
@@ -183,70 +264,22 @@ one_dino_linear <-
 ```
 
 ```{r}
-print(one_dino_linear)
-```
-
-```{r}
-new_dat <- tibble(age = seq(0, 16, length.out = 50))
+new_dat <- 
+  tibble(age = seq(from = 0, to = 16, length.out = 50))
 
 new_dat %>% 
   add_epred_draws(one_dino_linear) %>% 
   ggplot(aes(x = age, y = .epred)) +
-  stat_lineribbon(.width = .89, fill = "#009FB7", alpha = .4,
-                  color = NA) +
+  stat_lineribbon(.width = .89, fill = "#009FB7",
+                  alpha = .4, color = NA) +
   stat_lineribbon(fill = "transparent") +
-  geom_point(data = one_dino, aes(y = prop_mass), size = 2) +
+  geom_point(data = one_dino,
+             aes(y = prop_mass), size = 2) +
   scale_x_continuous(breaks = seq(0, 15, by = 5)) +
   coord_cartesian(ylim = c(0, 1.05), expand = FALSE) +
   labs(x = "Age", y = "Mass (normalized)") +
   theme_minimal()
 ```
-
-```{r}
-three_dino <- dino_dat %>% filter(species == 3)
-
-three_dino_linear <-
-  brm(data = three_dino,
-      family = gaussian,
-      prop_mass ~ 1 + age,
-      prior = c(prior(normal(0, 1), class = Intercept),
-                prior(normal(0, 1), class = b),
-                prior(exponential(1), class = sigma)),
-      iter = 2000, warmup = 1000, chains = 4, cores = 4,
-      seed = 1234,
-      file = "fits/w4h4-three-linear")
-```
-
-```{r}
-print(three_dino_linear)
-```
-
-
-```{r}
-new_dat %>% 
-  add_epred_draws(three_dino_linear) %>% 
-  ggplot(aes(x = age, y = .epred)) +
-  stat_lineribbon(.width = .89, alpha = .4, fill = "#009FB7",
-                  color = NA) +
-  stat_lineribbon(fill = "transparent") +
-  geom_point(data = three_dino, aes(y = prop_mass), size = 2) +
-  scale_x_continuous(breaks = seq(0, 15, by = 5)) +
-  coord_cartesian(ylim = c(0, 1.1), expand = FALSE) +
-  labs(x = "Age", y = "Mass (normalized)") +
-  theme_minimal()
-```
-
-The next model is based on scientific model
-$$
-\frac{dM}{dA} = k(\phi - M)
-$$
-
-Where $M$ is mass, $A$ is age, $k$ is rate, and $\phi$ is the maximum adult size. Solving the equation gives us:
-$$
-M(A) = \phi(1 - exp(-kA))
-$$
-
-We can define this equation in {brms} using the non-linear syntax
 
 ```{r}
 one_dino_bio <-
@@ -255,74 +288,69 @@ one_dino_bio <-
       bf(prop_mass ~ phi * (1 - exp(-k * age)),
          phi + k ~ 1,
          nl = TRUE),
-      prior = c(prior(normal(1, 0.5), nlpar = phi),
+      prior = c(prior(normal(1, .5), nlpar = phi),
                 prior(exponential(1), nlpar = k, lb = 0),
                 prior(exponential(1), class = sigma)),
-      iter = 4000, warmup = 3000, chains = 4, core = 4,
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
       seed = 1234,
-      control = list(adapt_delta = 0.95),
-      file = "fits/w4h4-one-bio")
+      file = "fits/w4h4-one-bio"
+      )
 ```
-```{r}
-print(one_dino_bio)
-```
-
 
 ```{r}
 new_dat %>% 
   add_epred_draws(one_dino_bio) %>% 
   ggplot(aes(x = age, y = .epred)) +
-  stat_lineribbon(.width = .89, fill = "#009FB7", alpha = .4,
-                  color = NA) +
+  stat_lineribbon(.width = .89, fill = "#009FB7",
+                  color = NA, alpha = .4) +
   stat_lineribbon(fill = "transparent") +
-  geom_point(data = one_dino, aes(y = prop_mass), size = 2) +
-  scale_x_continuous(breaks = seq(0, 5, by = 5)) +
+  geom_point(data = one_dino,
+             aes(y = prop_mass), size = 2) +
+  scale_x_continuous(breaks = seq(0, 15, by = 5)) +
   coord_cartesian(ylim = c(0, 1.05), expand = FALSE) +
-  labs(x = "Age", y = "Mass (normalized)")
+  labs(x = "Age", y = "Mass (normalized)") +
+  theme_minimal()
 ```
-More realistic model
-$$
-M(A) = \phi(1 - exp(-kA))^{\theta}
-$$
 ```{r}
-one_dino_acc <- 
-  brm(bf(prop_mass ~ phi * (1 - exp(-k * age)) ^ theta,
+one_dino_acc <-
+  brm(data = one_dino,
+      family = gaussian,
+      bf(prop_mass ~ phi * (1 - exp(-k * age)) ^ theta,
          phi + k + theta ~ 1,
-         nl = TRUE), data = one_dino, family = gaussian,
-      prior = c(prior(normal(1, 0.5), nlpar = phi),
+         nl = TRUE),
+      prior = c(prior(normal(1, .5), nlpar = phi),
                 prior(exponential(1), nlpar = k, lb = 0),
-                prior(exponential(0.1), nlpar = theta, lb = 0),
+                prior(exponential(.1), nlpar = theta, lb = 0),
                 prior(exponential(1), class = sigma)),
-      iter = 40000, warmup = 38000, chains = 4, cores = 4, 
+      iter = 20000, warmup = 19000, chains = 4, cores = 4,
       seed = 1234,
-      control = list(adapt_delta = 0.999, max_treedepth = 15),
-      file = "fits/w4h4-one-acc")
+      control = list(adapt_delta = .999, max_treedepth = 15),
+      file = "fits/w4h4-one-acc"
+      )
 ```
-
-```{r}
-print(one_dino_acc)
-```
-
 
 ```{r}
 new_dat %>% 
   add_epred_draws(one_dino_acc) %>% 
-  
   ggplot(aes(x = age, y = .epred)) +
-  stat_lineribbon(.width = .89, fill = "#009FB7", alpha = .4,
-                  color = NA) +
-  stat_lineribbon(fill = "transparent") +
-  geom_point(data = one_dino, aes(y = prop_mass), size = 2) +
+  stat_lineribbon(.width = .89, fill = "#009FB7",
+                  alpha = .4, color = NA) +
+  stat_lineribbon(fill = NA) +
+  geom_point(data = one_dino,
+             aes(x = age, y = prop_mass), size = 2) +
   scale_x_continuous(breaks = seq(0, 15, by = 5)) +
   coord_cartesian(ylim = c(0, 1.05), expand = FALSE) +
-  labs(x = "Age", y = "Mass (normalized)")
+  labs(x = "Age", y = "Mass (normalized)") +
+  theme_minimal()
 ```
+
 ```{r}
 one_dino_linear <- add_criterion(one_dino_linear, criterion = "loo")
 one_dino_bio <- add_criterion(one_dino_bio, criterion = "loo")
 one_dino_acc <- add_criterion(one_dino_acc, criterion = "loo")
 
-loo_compare(one_dino_linear, one_dino_bio, one_dino_acc, criterion = "loo")
+loo_compare(one_dino_linear, one_dino_bio, one_dino_acc,
+            criterion = "loo")
 ```
 
 ```{r}
@@ -334,35 +362,38 @@ all_dinos <-
          k ~ 0 + species,
          theta ~ 0 + species,
          nl = TRUE),
-      prior = c(prior(normal(1, 0.5), nlpar = phi),
+      prior = c(prior(normal(1, .5), nlpar = phi),
                 prior(exponential(1), nlpar = k, lb = 0),
-                prior(exponential(0.1), nlpar = theta, lb = 0),
+                prior(exponential(.1), nlpar = theta, lb = 0),
                 prior(exponential(1), class = sigma)),
       iter = 10000, warmup = 9000, chains = 4, cores = 4,
       seed = 1234,
+      control = list(adapt_delta = .95),
       file = "fits/w4h4-all")
 ```
 
 ```{r}
-p <- 
-  distinct(dino_dat, species_name, species) %>% 
+p <- distinct(dino_dat, species_name, species) %>% 
   expand_grid(age = seq(0, 16, length.out = 50)) %>% 
   add_epred_draws(all_dinos) %>% 
-  
-  ggplot(aes(x = age, y = .epred, fill = species_name, 
+  ggplot(aes(x = age, y = .epred, fill = species_name,
              color = species_name)) +
-  stat_lineribbon(.width = 0.89, alpha = 0.6, color = NA) +
+  stat_lineribbon(.width = .89, alpha = .6, color = NA) +
   stat_lineribbon(fill = "transparent") +
   geom_point(data = dino_dat, aes(y = prop_mass), size = 2) +
   scale_fill_viridis_d(option = "turbo") +
   scale_color_viridis_d(option = "turbo") +
   scale_x_continuous(breaks = seq(0, 15, by = 5)) +
   coord_cartesian(ylim = c(0, 2.05), expand = FALSE) +
-  labs(x = "Age", y = "Mass (normalized)", fill = "Species",
-       color = "Species")
+  labs(x = "Age", y = "Mass (normalized)", fill = "Species", color = "Species")
 
+p
+```
+
+```{r}
 p +
-  facet_wrap(~species_name, ncol = 3) +
-  guides(fill = "none", color = "none")
+  facet_wrap(~ species_name, ncol = 3) +
+  guides(fill = "none", color = "none") +
+  theme_minimal()
 ```
 

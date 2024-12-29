@@ -12,21 +12,21 @@ rm(list = ls())
 library(tidyverse)
 
 set.seed(1914)
-n <- 200
-p <- 0.1
+n <- 200 # number of grant proposals
+p <- 0.1 # proportion to select
 
 d <-
   # uncorrelated newsworthiness and trustworthiness
   tibble(newsworthiness = rnorm(n, mean = 0, sd = 1),
          trustworthiness = rnorm(n, mean = 0, sd = 1)) %>% 
-  # total score
+  # total_score
   mutate(total_score = newsworthiness + trustworthiness) %>% 
-  # select top 10% of combined score
+  # select top 10% of combined scores
   mutate(selected = ifelse(total_score >= quantile(total_score, 1 - p), TRUE, FALSE))
 
 head(d)
 ```
-The correlation among those cases for which ```selected == TRUE```
+Here's the correlation among those cases for which selected == TRUE
 ```{r}
 d %>% 
   filter(selected == TRUE) %>% 
@@ -36,7 +36,9 @@ d %>%
 
 ```{r}
 theme_set(theme_minimal())
+```
 
+```{r}
 text <-
   tibble(newsworthiness = c(2, 1),
          trustworthiness = c(2.25, -2.5),
@@ -44,7 +46,7 @@ text <-
          label = c("selected", "rejected"))
 
 d %>% 
-  ggplot(aes(x = newsworthiness, y = trustworthiness, color = selected)) +
+  ggplot(aes(x = newsworthiness, y = trustworthiness, colour = selected)) +
   geom_point(aes(shape = selected), alpha = 3/4) +
   geom_text(data = text,
             aes(label = label)) +
@@ -57,25 +59,23 @@ d %>%
   coord_cartesian(ylim = range(d$trustworthiness)) +
   theme(legend.position = "none")
 ```
-Newsworthiness and trustworthiness are only negatively correlated if we stratify by selected paper
 
 ## 6.1 Multicollinearity
-### 6.1.1 Multicollinear legs
+### 6.1.1 Multicollinear legs.
 ```{r}
 n <- 100
 set.seed(909)
 
 d <-
   tibble(height = rnorm(n, mean = 10, sd = 2),
-         leg_prop = runif(n, min = 0.4, max = 0.5)) %>% 
+         leg_prop = runif(n, min = .4, max = .5)) %>% 
   mutate(leg_left = leg_prop * height + rnorm(n, mean = 0, sd = .02),
          leg_right = leg_prop * height + rnorm(n, mean = 0, sd = .02))
 ```
 
-Left leg and left right are very highly correlated (as expected)
 ```{r}
 d %>% 
-  summarize(r = cor(leg_left, leg_right) %>% round(digits = 4))
+  summarise(r = cor(leg_left, leg_right) %>% round(digits = 4))
 ```
 
 ```{r}
@@ -104,9 +104,7 @@ b6.1 <-
 ```{r}
 print(b6.1)
 ```
-The est. error is very big and not looking too good
 
-Coefficient plot
 ```{r}
 library(bayesplot)
 
@@ -126,14 +124,15 @@ mcmc_plot(b6.1,
 
 ```{r}
 sim_and_fit <- function(seed, n = 100){
+  
   # set up the parameters
   n <- n
   set.seed(seed)
   
   # simulate the new data
-  d <- 
+  d <-
     tibble(height = rnorm(n, mean = 10, sd = 2),
-           leg_prop = runif(n, min = 0.4, max = 0.5)) %>% 
+           leg_prop = runif(n, min = .4, max = .5)) %>% 
     mutate(leg_left = leg_prop * height + rnorm(n, mean = 0, sd = .02),
            leg_right = leg_prop * height + rnorm(n, mean = 0, sd = .02))
   
@@ -142,6 +141,7 @@ sim_and_fit <- function(seed, n = 100){
 }
 ```
 
+Now use sim_and_fit() to make our simulations which correspond to seed values 1:4.
 ```{r}
 sim <-
   tibble(seed = 1:4) %>% 
@@ -165,17 +165,16 @@ sim %>%
   stat_pointinterval(.width = .95, color = "forestgreen") +
   labs(x = "posterior", y = NULL) +
   theme(axis.text.y = element_text(hjust = 0),
-        panel.border = element_rect(color = "black", fill = "transparent"),
+        panel.border = element_rect(color = "black", 
+                                    fill = "transparent"),
         panel.grid.minor = element_blank(),
         strip.text = element_text(hjust = 0)) +
   facet_wrap(~ seed, ncol = 1)
 ```
 
 ```{r}
-pairs(b6.1, variable = variables(b6.1)[2:3])
+pairs(b6.1, variable= variables(b6.1)[2:3])
 ```
-
-nicer and more focused attempt at drawing pair
 ```{r}
 post <- as_draws_df(b6.1)
 
@@ -184,21 +183,18 @@ post %>%
   geom_point(color = "forestgreen", alpha = 1/10, size = 1/2)
 ```
 
-Similar plot with the ```mcmc_scatter()```
 ```{r}
 color_scheme_set("green")
 
 post %>% 
   mcmc_scatter(pars = c("b_leg_left", "b_leg_right"),
-               size = 1/2,
-               alpha = 1/10)
+               size = 1/2, alpha = 1/10)
 ```
 
 ```{r}
 post %>% 
   summarise(rho = cor(b_leg_left, b_leg_right))
 ```
-Model that adds two parameters
 ```{r}
 post %>% 
   ggplot(aes(x = b_leg_left + b_leg_right, y = 0)) +
@@ -209,6 +205,7 @@ post %>%
        subtitle = "Marked by the median and 95% PIs")
 ```
 
+Now we fit the revised model after ditching one of the leg lengths.
 ```{r}
 b6.2 <-
   brm(data = d,
@@ -226,7 +223,6 @@ b6.2 <-
 print(b6.2)
 ```
 
-Posterior SD for leg_left looks much better. Let's compare this density to the one in Figure 6.2b
 ```{r}
 as_draws_df(b6.2) %>% 
   
@@ -239,7 +235,8 @@ as_draws_df(b6.2) %>%
        x = "only b_leg_left, this time")
 ```
 
-### 6.1.2 Multicollinear milk
+### 6.1.2 Multicollinear milk.
+Multicollinearity arises in real data, too. Load the milk data
 ```{r}
 data(milk, package = "rethinking")
 d <- milk
@@ -260,8 +257,8 @@ b6.3 <-
   brm(data = d,
       family = gaussian,
       k ~ 1 + f,
-      prior = c(prior(normal(0, 0.2), class = Intercept),
-                prior(normal(0, 0.5), class = b),
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
                 prior(exponential(1), class = sigma)),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
       seed = 6,
@@ -280,10 +277,7 @@ b6.4 <-
 posterior_summary(b6.3)[1:3, ] %>% round(digits = 2)
 ```
 
-```{r}
-posterior_summary(b6.4)[1:3, ] %>% round(digits = 2)
-```
-Using both predictors in the same regression model
+Now watch what happens when we place both predictor variables in the same regression model
 ```{r}
 b6.5 <-
   update(b6.4,
@@ -293,33 +287,34 @@ b6.5 <-
          file = "fits/b06.05")
 ```
 
+Now the betas are smaller and less certain
 ```{r}
 posterior_summary(b6.5)[1:3, ] %>% round(digits = 2)
 ```
 
+Here's a quick pairs plot
 ```{r}
 d %>% 
   select(kcal.per.g, perc.fat, perc.lactose) %>% 
   pairs(col = "forestgreen")
 ```
 
-pairs using GGally version
 ```{r}
 library(GGally)
 
 # define a couple custom functions
-my_diag <- function(data, mapping, ...){
-  ggplot(data = data, mapping = mapping) +
+my_diag <- function(data, mapping, ...) {
+  ggplot(data = data, mapping = mapping) + 
     geom_density(fill = "steelblue", color = "black")
 }
 
-my_lower <- function(data, mapping, ...){
-  ggplot(data = data, mapping = mapping) +
+my_lower <- function(data, mapping, ...) {
+  ggplot(data = data, mapping = mapping) + 
     geom_smooth(method = "lm", color = "orange", se = F) +
     geom_point(alpha = .8, size = 1/3, color = "blue")
-}
+  }
 
-# plug those custom functions into ggpairs()
+# plug those custom functions into `ggpairs()`
 ggpairs(data = d, columns = c(3:4, 6),
         upper = list(continuous = wrap("cor", family = "sans", color = "black")),
         diag = list(continuous = my_diag),
@@ -331,19 +326,19 @@ library(ggdag)
 
 dag_coords <-
   tibble(name = c("L", "D", "F", "K"),
-         x = c(1, 2, 3, 2),
-         y = c(2, 2, 2, 1))
+         x    = c(1, 2, 3, 2),
+         y    = c(2, 2, 2, 1))
 
 dagify(L ~ D,
        F ~ D,
        K ~ L + F,
-       coords = dag_coords) %>% 
+       coords = dag_coords) %>%
   
   ggplot(aes(x = x, y = y, xend = xend, yend = yend)) +
   geom_dag_point(aes(color = name == "D"),
                  alpha = 1/2, size = 6.5, show.legend = F) +
-  geom_point(x = 2, y = 2,
-              size = 6.5, shape = 1, stroke = 1, color = "orange") +
+  geom_point(x = 2, y = 2, 
+             size = 6.5, shape = 1, stroke = 1, color = "orange") +
   geom_dag_text(color = "black") +
   geom_dag_edges() +
   scale_color_manual(values = c("steelblue", "orange")) +
@@ -351,7 +346,9 @@ dagify(L ~ D,
   scale_y_continuous(NULL, breaks = NULL, expand = c(.1, .1))
 ```
 
-#### 6.1.2.2 Overthinking: Simulating collinearity
+#### 6.1.2.1 Rethinking: Identification guaranteed; comprehension up to you.
+
+#### 6.1.2.2 Overthinking: Simulating colllinearity
 ```{r}
 # define a custom function
 sim_coll <- function(seed, rho){
@@ -372,10 +369,10 @@ sim_coll <- function(seed, rho){
   sqrt(diag(vcov(m)))[2]
 }
 
-# how many simulations per 'rho'-value would you like?
+# how many simulations per rho-value would you like?
 n_seed <- 100
 
-# how many 'rho'-values from 0, to .99 would you like to evaluate the process over?
+# how many rho-values from 0 to .99 would you like to evaluate the process over?
 n_rho <- 30
 
 d <-
@@ -383,7 +380,7 @@ d <-
            rho = seq(from = 0, to = .99, length.out = n_rho)) %>% 
   mutate(parameter_sd = purrr::map2_dbl(seed, rho, sim_coll)) %>% 
   group_by(rho) %>% 
-  # we'll summarise() our output gby the mean and 95% intervals
+  # we'll summarise() our output by the mean and 95% intervals
   summarise(mean = mean(parameter_sd),
             ll = quantile(parameter_sd, prob = .025),
             ul = quantile(parameter_sd, prob = .975))
@@ -393,13 +390,11 @@ d <-
 d %>% 
   ggplot(aes(x = rho, y = mean)) +
   geom_smooth(aes(ymin = ll, ymax = ul),
-              stat = "identity",
-              fill = "orange", color = "orange", alpha = 1/3, linewidth = 2/3) +
-  labs(x = expression(rho),
-       y = "parameter SD") +
+              stat = "identity", fill = "orange",
+              color = "orange", alpha = 1/3, linewidth = 2/3) +
+  labs(x = expression(rho), y = "parameter SD") +
   coord_cartesian(ylim = c(0, .0072))
 ```
-
 ## 6.2 Post-treatment bias
 ```{r}
 # how many plants would you like?
@@ -414,7 +409,8 @@ d <-
 ```
 
 ```{r}
-d %>% head()
+d %>% 
+  head()
 ```
 
 ```{r}
@@ -425,7 +421,7 @@ d %>%
   mutate_if(is.double, round, digits = 2)
 ```
 
-### 6.2.1 A prior is born
+### 6.2.1 A prior is born.
 ```{r}
 set.seed(6)
 
@@ -435,7 +431,7 @@ sim_p <-
 
 # wrangle
 sim_p %>% 
-  mutate("exp(sim_p)" = exp(sim_p)) %>% 
+  mutate(`exp(sim_p)` = exp(sim_p)) %>% 
   gather() %>% 
   
   # plot
@@ -451,13 +447,13 @@ sim_p %>%
 Summarize
 ```{r}
 sim_p %>% 
-  mutate("exp(sim_p)" = exp(sim_p)) %>% 
+  mutate(`exp(sim_p)` = exp(sim_p)) %>% 
   pivot_longer(everything()) %>% 
   group_by(name) %>% 
   mean_qi(.width = .89) %>% 
   mutate_if(is.double, round, digits = 2)
 ```
-Create a model
+
 ```{r}
 b6.6 <-
   brm(data = d,
@@ -474,7 +470,6 @@ b6.6 <-
 print(b6.6)
 ```
 
-Add predictor variable treatment and fungus
 ```{r}
 b6.7 <-
   brm(data = d,
@@ -495,8 +490,7 @@ b6.7 <-
 print(b6.7)
 ```
 
-### 6.2.2 Blocked by consequence
-Previous model is wrong because we include fungus which is a post-treatment variable. To measure the treatment effect properly, we should omit fungus from model
+### 6.2.2 Blocked by consequence.
 ```{r}
 b6.8 <-
   brm(data = d,
@@ -516,13 +510,13 @@ b6.8 <-
 print(b6.8)
 ```
 
-### 6.2.3 Fungus and d-separation
+### 6.2.3 Fungus and d-separation.
 ```{r}
-# define our coordinages
+# define our coordinates
 dag_coords <-
   tibble(name = c("H0", "T", "F", "H1"),
-         x = c(1, 5, 4, 3),
-         y = c(2, 2, 1.5, 1))
+         x    = c(1, 5, 4, 3),
+         y    = c(2, 2, 1.5, 1))
 
 # save our DAG
 dag <-
@@ -530,30 +524,31 @@ dag <-
          H1 ~ H0 + F,
          coords = dag_coords)
 
-# plot
-dag %>% 
+# plot 
+dag %>%
   ggplot(aes(x = x, y = y, xend = xend, yend = yend)) +
   geom_dag_point(color = "steelblue", alpha = 1/2, size = 6.5) +
   geom_dag_text(color = "black") +
-  geom_dag_edges() +
+  geom_dag_edges() + 
   theme_dag()
 ```
 
 ```{r}
-gg_simple_dag <- function(d){
+gg_simple_dag <- function(d) {
+  
   d %>% 
     ggplot(aes(x = x, y = y, xend = xend, yend = yend)) +
     geom_dag_point(color = "steelblue", alpha = 1/2, size = 6.5) +
     geom_dag_text(color = "black") +
-    geom_dag_edges() +
+    geom_dag_edges() + 
     theme_dag()
+  
 }
 
-# try it out
+# try it out!
 dag %>% 
   gg_simple_dag()
 ```
-
 ```{r}
 library(dagitty)
 
@@ -570,13 +565,12 @@ dag %>%
 impliedConditionalIndependencies(dag)
 ```
 
-Now consider a DAG of a different kind of causal structure
 ```{r}
 # define our coordinates
 dag_coords <-
   tibble(name = c("H0", "H1", "M", "F", "T"),
-         x = c(1, 2, 2.5, 3, 4),
-         y = c(2, 2, 1, 2, 2))
+         x    = c(1, 2, 2.5, 3, 4),
+         y    = c(2, 2, 1, 2, 2))
 
 # save our DAG
 dag <-
@@ -584,15 +578,15 @@ dag <-
          H1 ~ H0 + M,
          coords = dag_coords)
 
-# plot
-dag %>% 
+# plot 
+dag %>%
   ggplot(aes(x = x, y = y, xend = xend, yend = yend)) +
   geom_dag_point(aes(color = name == "M"),
                  alpha = 1/2, size = 6.5, show.legend = F) +
-  geom_point(x = 2.5, y = 1,
+  geom_point(x = 2.5, y = 1, 
              size = 6.5, shape = 1, stroke = 1, color = "orange") +
   geom_dag_text(color = "black") +
-  geom_dag_edges() +
+  geom_dag_edges() + 
   scale_color_manual(values = c("steelblue", "orange")) +
   theme_dag()
 ```
@@ -618,22 +612,19 @@ dag %>%
   gg_fancy_dag(x = 2.5, y = 1, circle = "M")
 ```
 
-Simulate data on the new DAG
 ```{r}
 set.seed(71)
 n <- 1000
 
 d2 <-
   tibble(h0 = rnorm(n, mean = 10, sd = 2),
-         treatment = rep(0:1, each = n/2),
+         treatment = rep(0:1, each = n / 2),
          m = rbinom(n, size = 1, prob = .5),
-         fungus = rbinom(n, size = 1, prob = .5 - treatment * 0.4 + 0.4 * m),
+         fungus = rbinom(n, size = 1, 
+                         prob = .5 - treatment * 0.4 + 0.4 * m),
          h1 = h0 + rnorm(n, mean = 5 + 3 * m, sd = 1))
-
-head(d2)
 ```
 
-Use update() to refit b6.7 and b6.8 to the new data
 ```{r}
 b6.7b <-
   update(b6.7,
@@ -649,38 +640,37 @@ b6.8b <-
 ```
 
 ```{r}
-posterior_summary(b6.7b)[1:3, ] %>% round(digits = 2)
+posterior_summary(b6.7b)[1:4,] %>% round(digits = 2)
 ```
 
 ```{r}
 posterior_summary(b6.8b)[1:3, ] %>% round(digits = 2)
 ```
 
-# 6.3 Collider bias
+## 6.3 Collider bias
 ```{r}
 dag_coords <-
   tibble(name = c("T", "S", "N"),
-         x = 1:3,
-         y = 1)
+         x    = 1:3,
+         y    = 1)
 
 dagify(S ~ T + N,
-       coords = dag_coords) %>% 
+       coords = dag_coords) %>%
   gg_simple_dag()
 ```
 
-### 6.3.1 Collider of false sorrow
 ```{r}
 dagify(M ~ H + A,
-       coords = dag_coords %>% 
-         mutate(name = c("H", "M", "A"))) %>% 
+       coords = dag_coords %>%
+         mutate(name = c("H", "M", "A"))) %>%
   gg_simple_dag()
 ```
 
 ```{r}
 new_borns <- function(n = 20){
-  tibble(a = 1,
-         m = 0,
-         h = seq(from = -2, to = 2, length.out = n))
+  tibble(a = 1, # 1 year old
+         m = 0, # not married
+         h = seq(from = -2, to = 2, length.out = n)) # range of happiness score
 }
 ```
 
@@ -688,25 +678,24 @@ new_borns <- function(n = 20){
 new_borns()
 ```
 
-Make a function to update population
 ```{r}
-update_population <- function(pop, n_births = 20, aom = 18, max_age = 65){
+update_population <- function(pop, n_births = 20, aom = 18,
+                              max_age = 65){
   pop %>% 
     mutate(a = a + 1, # everyone gets one year older
-           # some people get marrid
-           m = ifelse(m >= 1, 1, (a >= aom) * rbinom(n(), 1, rethinking::inv_logit(h - 4)))
-           ) %>% 
+           # some people get married
+           m = ifelse(m >= 1, 1, 
+                      (a >= aom) * rbinom(n(), 1, rethinking::inv_logit(h - 4)))) %>% 
     filter(a <= max_age) %>%  # old people die
-    bind_rows(new_borns(n_births))
+    bind_rows(new_borns(n_births)) # new people are born
 }
 ```
 
 ```{r}
-new_borns() %>% 
-  update_population()
+new_borns() %>% update_population()
 ```
 
-Run the population simulation for 1000 years
+Run the population for 1,000 years
 ```{r}
 # this was McElreath's seed
 set.seed(1977)
@@ -728,7 +717,6 @@ d <-
 glimpse(d)
 ```
 
-Summarize the variables
 ```{r}
 d %>% 
   pivot_longer(everything()) %>% 
@@ -739,7 +727,8 @@ d %>%
 
 ```{r}
 d %>% 
-  mutate(married = factor(married, labels = c("unmarried", "married"))) %>% 
+  mutate(married = 
+           factor(married, labels = c("unmarried", "married"))) %>% 
   
   ggplot(aes(x = age, y = happiness, color = married)) +
   geom_point(size = 1.75) +
@@ -747,14 +736,6 @@ d %>%
   scale_x_continuous(expand = c(.015, .015)) +
   theme(panel.grid = element_blank())
 ```
-
-Here's the likelihood for the simple Gaussian multivariable model predicting happiness
-$$
-\begin{align}
-happiness_{i} &\sim Normal(\mu_{i}, \sigma) \\
-\mu_{i} &= \alpha_{married[i]} + \beta_{1} age_{i},
-\end{align}
-$$
 
 ```{r}
 d2 <-
@@ -773,7 +754,6 @@ d2 <-
 head(d2)
 ```
 
-Fit the model
 ```{r}
 b6.9 <-
   brm(data = d2,
@@ -792,7 +772,7 @@ b6.9 <-
 print(b6.9)
 ```
 
-Now drop marriage status
+Now drop marriage status, mid
 ```{r}
 b6.10 <-
   brm(data = d2,
@@ -827,24 +807,24 @@ Now we add the haunting variable, U
 ```{r}
 dag_coords <-
   tibble(name = c("G", "P", "C", "U"),
-         x = c(1, 2, 2, 2.5),
-         y = c(2, 2, 1, 1.5))
+         x    = c(1, 2, 2, 2.5),
+         y    = c(2, 2, 1, 1.5))
 
 dagify(P ~ G + U,
        C ~ P + G + U,
-       coords = dag_coords) %>% 
+       coords = dag_coords) %>%
   gg_fancy_dag(x = 2.5, y = 1.5, circle = "U")
 ```
 
-Let's simulate some data
+This is a mess. Let's simulate some data
 ```{r}
 # how many grandparent-parent-child triads would you like?
 n <- 200
 
-b_gp <- 1 # direct effect of G on P
-b_gc <- 0 # direct effect of G on C
-b_pc <- 1 # direct effect of P on C
-b_u <- 2 # direct effect of U on P and C
+b_gp <- 1
+b_gc <- 0
+b_pc <- 1
+b_u <- 2
 
 # simulate triads
 set.seed(1)
@@ -852,7 +832,8 @@ d <-
   tibble(u = 2 * rbinom(n, size = 1, prob = .5) - 1,
          g = rnorm(n, mean = 0, sd = 1)) %>% 
   mutate(p = rnorm(n, mean = b_gp * g + b_u * u, sd = 1)) %>% 
-  mutate(c = rnorm(n, mean = b_pc * p + b_gc * g + b_u * u, sd = 1))
+  mutate(c = rnorm(n, mean = b_pc * p + b_gc * g
+                   + b_u * u, sd = 1))
 
 head(d)
 ```
@@ -874,16 +855,20 @@ b6.11 <-
 print(b6.11)
 ```
 
+Here's our version of Figure 6.5.
 ```{r}
 d %>% 
-  mutate(centile = ifelse(p >= quantile(p, prob = .45) & p <= quantile(p, prob = .60), "a", "b"),
+  mutate(centile = ifelse(p >= quantile(p, prob = .45)
+                          & p <= quantile(p, prob = .60),
+                          "a", "b"),
          u = factor(u)) %>% 
   
   ggplot(aes(x = g, y = c)) +
   geom_point(aes(shape = centile, color = u),
              size = 2.5, stroke = 1/4) +
   stat_smooth(data = . %>% filter(centile == "a"),
-              method = "lm", se = F, linewidth = 1/2, color = "black", fullrange = T) +
+              method = "lm", se = F, linewidth = 1/2, 
+              color = "black", fullrange = T) +
   scale_shape_manual(values = c(19, 1)) +
   scale_color_manual(values = c("black", "lightblue")) +
   theme(legend.position = "none")
@@ -903,36 +888,38 @@ b6.12 <-
 print(b6.12)
 ```
 
-## 6.4 Confronting confounding
+```{r}
+b_gc
+```
+
+## 6.4 Confronting counfounding
 ```{r}
 dag_coords <-
   tibble(name = c("E", "U", "W"),
-         x = c(1, 2, 3),
-         y = c(1, 2, 1))
+         x    = c(1, 2, 3),
+         y    = c(1, 2, 1))
 
 dagify(E ~ U,
        W ~ E + U,
-       coords = dag_coords) %>% 
+       coords = dag_coords) %>%
   gg_simple_dag()
 ```
 
 ```{r}
-dagify( W ~ E + U,
-        coords = dag_coords) %>% 
+dagify(W ~ E + U,
+       coords = dag_coords) %>%
   gg_simple_dag()
 ```
-
 ### 6.4.1 Shutting the backdoor
-Representations for four types of variable relations: the fork, pipe, collider, and descendant
 ```{r}
-d1 <-
+d1 <- 
   dagify(X ~ Z,
          Y ~ Z,
          coords = tibble(name = c("X", "Y", "Z"),
                          x = c(1, 3, 2),
                          y = c(2, 2, 1)))
 
-d2 <-
+d2 <- 
   dagify(Z ~ X,
          Y ~ Z,
          coords = tibble(name = c("X", "Y", "Z"),
@@ -966,7 +953,7 @@ library(patchwork)
   plot_annotation(title = "The four elemental confounds") 
 ```
 
-### 6.4.2 Two roads
+### 6.4.2 Two roads.
 ```{r}
 dag_coords <-
   tibble(name = c("A", "B", "C", "U", "X", "Y"),
@@ -1000,23 +987,23 @@ adjustmentSets(dag_6.1, exposure = "X", outcome = "Y")
 adjustmentSets(dag_6.1, exposure = "X", outcome = "Y", type = "all")
 ```
 
-### 6.4.3 Backdoor waffles
+### 6.4.3 Backdoor waffles.
 ```{r}
 dag_coords <-
   tibble(name = c("A", "D", "M", "S", "W"),
-         x = c(1, 3, 2, 1, 3),
-         y = c(1, 1, 2, 3, 3))
+         x    = c(1, 3, 2, 1, 3),
+         y    = c(1, 1, 2, 3, 3))
 
-dagify( A ~ S,
-        D ~ A + M + W,
-        M ~ A + S,
-        W ~ S,
-        coords = dag_coords) %>% 
+dagify(A ~ S,
+       D ~ A + M + W,
+       M ~ A + S,
+       W ~ S,
+       coords = dag_coords) %>%
   gg_simple_dag()
 ```
 
 ```{r}
-dag_6.2 <-
+dag_6.2 <- 
   dagitty(
     "dag {
     A -> D
@@ -1029,18 +1016,23 @@ dag_6.2 <-
 adjustmentSets(dag_6.2, exposure = "W", outcome = "D")
 ```
 
+```{r}
+impliedConditionalIndependencies(dag_6.2)
+```
+
 ## 6.5 Summary [and a little more practice]
 ```{r}
 data(WaffleDivorce, package = "rethinking")
 d <- WaffleDivorce
 
-# standardize the continuous focal variable
+# standardize the continuous focal variables
 d <-
   d %>% 
   mutate(a = rethinking::standardize(MedianAgeMarriage),
          d = rethinking::standardize(Divorce),
          m = rethinking::standardize(Marriage),
-         s = factor(South, levels = 0:1, labels = c("North", "South")),
+         s = factor(South, levels = 0:1, labels = 
+                      c("North", "South")),
          w = rethinking::standardize(WaffleHouses))
 
 # tidy up
@@ -1056,6 +1048,7 @@ ggpairs(data = d, columns = c(14:16, 18, 17),
   scale_fill_manual(values = c("forestgreen", "lightblue"))
 ```
 
+Fit a series of models
 ```{r}
 b6.13 <-
   brm(data = d,
@@ -1079,34 +1072,34 @@ b6.14 <-
       seed = 6,
       file = "fits/b06.14")
 
-b6.15 <- 
-  brm(data = d, 
+b6.15 <-
+  brm(data = d,
       family = gaussian,
       d ~ 1 + w + a + m,
-      prior = c(prior(normal(0, 0.2), class = Intercept),
-                prior(normal(0, 0.5), class = b),
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
                 prior(exponential(1), class = sigma)),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
       seed = 6,
       file = "fits/b06.15")
 
-b6.16 <- 
-  brm(data = d, 
+b6.16 <-
+  brm(data = d,
       family = gaussian,
       d ~ 1 + w + a,
-      prior = c(prior(normal(0, 0.2), class = Intercept),
-                prior(normal(0, 0.5), class = b),
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
                 prior(exponential(1), class = sigma)),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
       seed = 6,
       file = "fits/b06.16")
 
-b6.17 <- 
-  brm(data = d, 
+b6.17 <-
+  brm(data = d,
       family = gaussian,
       d ~ 1 + w + m,
-      prior = c(prior(normal(0, 0.2), class = Intercept),
-                prior(normal(0, 0.5), class = b),
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
                 prior(exponential(1), class = sigma)),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
       seed = 6,
@@ -1114,20 +1107,20 @@ b6.17 <-
 ```
 
 ```{r}
-formula <- c("d ~ 1 + w", 
-             "d ~ 1 + w + s", 
-             "d ~ 1 + w + a + m", 
-             "d ~ 1 + w + a", 
+formula <- c("d ~ 1 + w",
+             "d ~ 1 + w + s",
+             "d ~ 1 + w + a + m",
+             "d ~ 1 + w + a",
              "d ~ 1 + w + m")
 
 tibble(fit = str_c("b6.1", 3:7)) %>% 
-  mutate(y    = str_c(fit, " (", formula, ")"),
+  mutate(y = str_c(fit, " (", formula, ") "),
          post = purrr::map(fit, ~ get(.) %>% 
-                               as_draws_df() %>% 
-                               select(b_w))) %>% 
+                             as_draws_df() %>% 
+                             select(b_w))) %>% 
   unnest(post) %>% 
   
-  ggplot(aes(x = b_w, y = y, color = fit %in% c("b6.14", "b6.15"))) +
+  ggplot(aes(x = b_w, y= y, color = fit %in% c("b6.14", "b6.15"))) +
   stat_pointinterval(.width = .95) +
   scale_color_manual(values = c("grey50", "forestgreen")) +
   labs(x = expression(beta[w]),

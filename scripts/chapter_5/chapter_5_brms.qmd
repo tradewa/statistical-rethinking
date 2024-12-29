@@ -1,23 +1,19 @@
 ---
-title: "Chapter 5 BRMS"
+title: "5 The Many Variables & The Spurious Waffles"
 format: html
 ---
-# The Many Variables & The Spurious Waffles
 
-```{r}
-rm(list = ls())
-library(tidyverse)
-```
 ## 5.1 Spurious associations
 ```{r}
+library(tidyverse)
+
 data(WaffleDivorce, package = "rethinking")
 d <- WaffleDivorce
 ```
 
-Add new columns for standardized value
 ```{r}
 d <-
-  d |> 
+  d %>% 
   mutate(d = rethinking::standardize(Divorce),
          m = rethinking::standardize(Marriage),
          a = rethinking::standardize(MedianAgeMarriage))
@@ -28,55 +24,73 @@ rm(WaffleDivorce)
 library(brms)
 ```
 
-Look for pattern in the existing data with simple lm line
+```{r}
+head(d)
+glimpse(d)
+```
+
 ```{r}
 library(ggrepel)
 
-d |> 
-  ggplot(aes(x = WaffleHouses / Population, y = Divorce)) +
+d %>% 
+  ggplot(aes(x = WaffleHouses/Population, y = Divorce)) +
   stat_smooth(method = "lm", fullrange = T, linewidth = 1/2,
-              color = "firebrick4", fill = "firebrick", alpha = 1/5) +
+              color = "firebrick4", fill = "firebrick",
+              alpha = 1/5) +
   geom_point(size = 1.5, color = "firebrick4", alpha = 1/2) +
-  geom_text_repel(data = d |> 
-                    filter(Loc %in% c("ME", "OK", "AR", "AL", "GA", "SC", "NJ")),
+  geom_text_repel(data = d %>% 
+                    dplyr::filter(Loc %in% c("ME", "OK", "AR",
+                                      "AL", "GA", "SC",
+                                      "NJ")),
                   aes(label = Loc),
-                  size = 3, seed = 1042) +
-  scale_x_continuous("Waffle Houses per million", limits = c(0, 55)) +
-  ylab("Divorce rate") +
+                  size = 4, seed = 1042) +
+  scale_x_continuous("Waffle Houses per million",
+                     limits = c(0, 55)) +
   coord_cartesian(xlim = c(0, 50), ylim = c(5, 15)) +
-  theme_bw() + 
+  theme_bw() +
   theme(panel.grid = element_blank())
 ```
 
-Create lm model with median age as predictors
+```{r}
+sd(d$MedianAgeMarriage)
+```
+
 ```{r}
 b5.1 <-
   brm(data = d,
-      family = gaussian(),
+      family = gaussian,
       d ~ 1 + a,
-      prior = c(prior(normal(0, 0.2), class = Intercept),
-                prior(normal(0, 0.5), class = b),
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
                 prior(exponential(1), class = sigma)),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
-      seed = 5, sample_prior = T,
+      seed = 5,
+      sample_prior = T,
       file = "fits/b05.01")
 ```
 
-Sample from prior
+```{r}
+plot(b5.1)
+```
+
+```{r}
+summary(b5.1)
+```
+
 ```{r}
 prior <- prior_draws(b5.1)
 
-prior |> glimpse()
+prior %>% glimpse()
 ```
-Prior predictive distributions
+
 ```{r}
 set.seed(5)
 
-prior |> 
-  slice_sample(n = 50) |> 
-  rownames_to_column("draw") |> 
-  expand_grid(a = c(-2, 2)) |> 
-  mutate(d = Intercept + b * a) |> 
+prior %>% 
+  slice_sample(n = 50) %>% 
+  rownames_to_column("draw") %>% 
+  expand_grid(a = c(-2, 2)) %>% 
+  mutate(d = Intercept + b * a) %>% 
   
   ggplot(aes(x = a, y = d)) +
   geom_line(aes(group = draw),
@@ -88,25 +102,21 @@ prior |>
   theme(panel.grid = element_blank())
 ```
 
-Posterior predictions
+To get the posterior predictions from our brms model, we'll use fitted() in place of link(). But I want to use add_epred_draws instead
 ```{r}
-# determine the range of 'a' values we'd like to feed into 'fitted()'
+# determine the range of 'a' values we'd like to feed into fitted()
 nd <- tibble(a = seq(from = -3, to = 3.2, length.out = 30))
 
-# now use 'fitted()' to get the model-implied trajectories
-fitted(b5.1,
-       newdata = nd) |> 
-  data.frame() |> 
-  bind_cols(nd) |> 
-  
-  # plot
+# now use 'fitted' to get the model-implied trajectories
+add_epred_draws(nd, b5.1) %>% 
+  mean_qi(.epred) %>% 
   ggplot(aes(x = a)) +
-  geom_smooth(aes(y = Estimate, ymin = Q2.5, ymax = Q97.5),
-              stat = "identity",
-              fill = "firebrick", color = "firebrick4", alpha = 1/5, linewidth = 1/4) +
-  geom_point(data = d,
-             aes(y = d),
-             size = 2, color = "firebrick4") +
+  geom_smooth(aes(y = .epred, ymin = .lower, ymax = .upper),
+              stat = "identity", fill = "firebrick",
+              color = "firebrick4", alpha = 1/5,
+              linewidth = 1/4) +
+  geom_point(data = d, aes(y = d), size = 2,
+             color = "firebrick4") +
   labs(x = "Median age marriage (std)",
        y = "Divorce rate (std)") +
   coord_cartesian(xlim = range(d$a),
@@ -119,17 +129,16 @@ fitted(b5.1,
 print(b5.1)
 ```
 
-Second univariable model
 ```{r}
 b5.2 <-
   brm(data = d,
-      family = gaussian(),
+      family = gaussian,
       d ~ 1 + m,
-      prior = c(prior(normal(0, 0.2), class = Intercept),
-                prior(normal(0, 0.5), class = b),
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
                 prior(exponential(1), class = sigma)),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
-      seed = 5,
+      seed = 1234,
       file = "fits/b05.02")
 ```
 
@@ -138,20 +147,17 @@ print(b5.2)
 ```
 
 ```{r}
-nd <- tibble(m = seq(from = -2.5, to = 3.5, length.out = 30))
+nd <- tibble(m = seq(from = -3, to = 3, length.out = 30))
 
-fitted(b5.2,
-       newdata = nd) |> 
-  data.frame() |> 
-  bind_cols(nd) |> 
-  
+add_epred_draws(nd, b5.2) %>% 
+  mean_qi(.epred) %>% 
   ggplot(aes(x = m)) +
-  geom_smooth(aes(y = Estimate, ymin = Q2.5, ymax = Q97.5),
-              stat = "identity",
-              fill = "firebrick", color = "firebrick4", alpha = 1/5, linewidth = 1/4) +
-  geom_point(data = d,
-             aes(y = d),
-             size = 2, color = "firebrick4") +
+  geom_smooth(aes(y = .epred, ymin = .lower, ymax = .upper),
+              stat = "identity", color = "firebrick4",
+              fill = "firebrick", alpha = 1/5,
+              linewidth = 1/4) +
+  geom_point(data = d, aes(y = d), size = 2,
+             color = "firebrick4") +
   labs(x = "Marriage rate (std)",
        y = "Divorce rate (std)") +
   coord_cartesian(xlim = range(d$m),
@@ -159,9 +165,10 @@ fitted(b5.2,
   theme_bw() +
   theme(panel.grid = element_blank())
 ```
+
 ### 5.1.1 Think before you regress
 ```{r}
-library(dagitty)
+# library(dagitty)
 library(ggdag)
 ```
 
@@ -169,20 +176,20 @@ library(ggdag)
 set.seed(5)
 
 dagify(M ~ A,
-       D ~ A + M) |> 
+       D ~ A + M) %>% 
   ggdag(node_size = 8)
 ```
-
+We can pretty it up a little too
 ```{r}
 dag_coords <-
   tibble(name = c("A", "M", "D"),
-         x    = c(1, 3, 2),
-         y    = c(2, 2, 1))
+         x = c(1, 3, 2),
+         y = c(2, 2, 1))
 
 p1 <-
   dagify(M ~ A,
          D ~ A + M,
-         coords = dag_coords) %>%
+         coords = dag_coords) %>% 
   
   ggplot(aes(x = x, y = y, xend = xend, yend = yend)) +
   geom_dag_point(color = "firebrick", alpha = 1/4, size = 10) +
@@ -195,7 +202,7 @@ p1 <-
 
 p1
 ```
-Alternative DAG model
+
 ```{r}
 p2 <-
   dagify(M ~ A,
@@ -214,58 +221,48 @@ p2 <-
 p2
 ```
 
-### 5.1.2 Testable implications
+### 5.1.2 Testable implications.
 ```{r}
 library(patchwork)
 
 p1 | p2
 ```
 ```{r}
-d |> 
-  select(d:a) |> 
+d %>% 
+  select(d:a) %>% 
   cor()
 ```
 
 ```{r}
 library(psych)
 
-d |> 
-  select(d:a) |> 
+d %>% 
+  select(d:a) %>% 
   lowerCor(digits = 3)
 ```
 
-Our second DAG, above, suggests "that $D$ is independent of $M$, conditional on $A$" (p. 130). We can use the dagitty:impliedConditionalIndependencies() function to express that conditional independence in formal notation.
 ```{r}
-dagitty('dag{ D <- A -> M}') |> 
+library(dagitty)
+
+dagitty('dag{ D <- A -> M } ') %>% 
   impliedConditionalIndependencies()
 ```
 
-The lack of conditional dependencies in the first DAG may be expressed this way.
 ```{r}
-dagitty('dag{D <- A -> M -> D}') |> 
+dagitty('dag{D <- A -> M -> D}') %>% 
   impliedConditionalIndependencies()
 ```
 
-### 5.1.3 Multiple regression notation
-$$
-\begin{align}
-Divorce\_std\_{i} &\sim Normal(\mu_{i}, \sigma) \\
-\mu_{i} &= \alpha + \beta_{1} Marriage\_std_{i} + \beta_{2} MedianAgeMarriage\_std_{2} \\
-\alpha &\sim Normal(0, 0.2) \\
-\beta_{1} &\sim Normal(0, 0.5) \\
-\beta_{2} &\sim Normal(0, 0.5) \\
-\sigma &\sim Exponential(1) \\
-\end{align}
-$$
-
+### 5.1.3 Multiple regression notation.
 ### 5.1.4 Approximating the posterior.
 ```{r}
 b5.3 <-
   brm(data = d,
-      family = gaussian(),
+      family = gaussian,
       d ~ 1 + m + a,
-      prior = c(prior(normal(0, 0.2), class = Intercept),
-                prior(normal(0, 0.5), class = b),
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b, coef = m),
+                prior(normal(0, .5), class = b, coef = a),
                 prior(exponential(1), class = sigma)),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
       seed = 5,
@@ -279,25 +276,25 @@ print(b5.3)
 ```{r}
 # first, extract and rename the necessary posterior parameters
 bind_cols(
-  as_draws_df(b5.1) |> 
-    transmute("b5.1_beta[A]" = b_a),
-  as_draws_df(b5.2) |> 
-    transmute("b5.2_beta[M]" = b_m),
-  as_draws_df(b5.3) |> 
-    transmute("b5.3_beta[M]" = b_m,
-              "b5.3_beta[A]" = b_a)
-) |> 
+  as_draws_df(b5.1) %>% 
+    transmute(`b5.1_beta[A]` = b_a),
+  as_draws_df(b5.2) %>% 
+    transmute(`b5.2_beta[M]` = b_m),
+  as_draws_df(b5.3) %>% 
+    transmute(`b5.3_beta[M]` = b_m,
+              `b5.3_beta[A]` = b_a)
+  ) %>% 
   # convert them to the long format, group, and get the posterior summaries
-  pivot_longer(everything()) |> 
-  group_by(name) |> 
+  pivot_longer(everything()) %>% 
+  group_by(name) %>% 
   summarise(mean = mean(value),
-            ll = quantile(value, prob = .025),
-            ul = quantile(value, prob = .975)) |> 
-  # since the 'key' variable is really two variables in one, here we splot them up
-  separate(col = name, into = c("fit", "parameter"), sep = "_") |> 
-
-# plot
-ggplot(aes(x = mean, xmin = ll, xmax = ul, y = fit)) +
+            ll   = quantile(value, prob = .025),
+            ul   = quantile(value, prob = .975)) %>% 
+  # since the `key` variable is really two variables in one, here we split them up
+  separate(col = name, into = c("fit", "parameter"), sep = "_") %>% 
+  
+  # plot!
+  ggplot(aes(x = mean, xmin = ll, xmax = ul, y = fit)) +
   geom_vline(xintercept = 0, color = "firebrick", alpha = 1/5) +
   geom_pointrange(color = "firebrick") +
   labs(x = "posterior", y = NULL) +
@@ -308,26 +305,27 @@ ggplot(aes(x = mean, xmin = ll, xmax = ul, y = fit)) +
 ```
 
 ```{r}
-dagitty("dag{ D <- A -> M }") |> 
+dagitty('dag{ D <- A -> M }') %>% 
   impliedConditionalIndependencies()
 ```
 
-#### 5.1.4.1 Overthinking: Simulating the divorce example
+#### 5.1.4.1 Overthinking: Simulating the divorce example.
 ```{r}
 # how many states would you like?
 n <- 50
 
-set.seed(50)
+set.seed(5)
 sim_d <-
-  tibble(age = rnorm(n, mean = 0, sd = 1)) |>  # sim A
-  mutate(mar = rnorm(n, mean = -age, sd = 1),  # sim A -> M
-         div = rnorm(n, mean = age, sd = 1))   # sim A -> D
+  tibble(age = rnorm(n, mean = 0, sd = 1)) %>%  # sim A
+  mutate(mar = rnorm(n, mean = -age, sd = 1), # sim A -> M
+         div = rnorm(n, mean = age, sd = 1)) # sim A _> D
 
 head(sim_d)
 ```
-We simulated those data based on this formulation
+
+We simulated those data based on this formulation.
 ```{r}
-dagitty("dag{divorce <- age -> marriage}") |> 
+dagitty('dag{ divorce <- age -> marriage}') %>% 
   impliedConditionalIndependencies()
 ```
 
@@ -335,7 +333,7 @@ dagitty("dag{divorce <- age -> marriage}") |>
 pairs(sim_d, col = "firebrick4")
 ```
 
-If we use the ```update()``` function, we can refit the last models in haste
+If we use the update() function, we can refit the last model in haste
 ```{r}
 b5.1_sim <-
   update(b5.1,
@@ -388,15 +386,15 @@ bind_cols(
   facet_wrap(~ parameter, ncol = 1, labeller = label_parsed)
 ```
 
-### 5.1.5 Plotting multivariate posteriors
+### 5.1.5 Plotting multivariate posteriors.
 #### 5.1.5.1 Predictor residual plots
 ```{r}
 b5.4 <-
   brm(data = d,
       family = gaussian,
       m ~ 1 + a,
-      prior = c(prior(normal(0, 0.2), class = Intercept),
-                prior(normal(0, 0.5), class = b),
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
                 prior(exponential(1), class = sigma)),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
       seed = 5,
@@ -407,26 +405,24 @@ b5.4 <-
 print(b5.4)
 ```
 
-With fitted(), we compute the expected values for each state (with the exception of Nevada). Since the a values for each state are in the date we used to fit the model, we’ll omit the newdata argument.
 ```{r}
 f <-
-  fitted(b5.4) |> 
-  data.frame() |> 
-  bind_cols(d)
+  add_epred_draws(newdata = b5.4$data, object = b5.4) %>% 
+  mean_qi(.epred)
 
 glimpse(f)
 ```
 
 ```{r}
 p1 <-
-  f |> 
+  f %>% 
   ggplot(aes(x = a, y = m)) +
   geom_point(size = 2, shape = 1, color = "firebrick4") +
-  geom_segment(aes(xend = a, yend = Estimate),
+  geom_segment(aes(xend = a, yend = .epred),
                linewidth = 1/4) +
-  geom_line(aes(y = Estimate),
+  geom_line(aes(y = .epred),
             color = "firebrick4") +
-  geom_text_repel(data = . %>% filter(Loc %in% c("WY", "ND", "ME", "HI", "DC")),  
+  geom_text_repel(data = d %>% dplyr::filter(Loc %in% c("WY", "ND", "ME", "HI", "DC")),  
                   aes(label = Loc), 
                   size = 3, seed = 14) +
   labs(x = "Age at marriage (std)",
@@ -438,25 +434,25 @@ p1 <-
 p1
 ```
 
-Residuals
 ```{r}
 r <-
-  residuals(b5.4) |> 
+  residuals(b5.4) %>% 
   # to use this in ggplot2, we need to make it a tibble or data frame
-  data.frame() |> 
+  data.frame() %>% 
   bind_cols(d)
 
 p3 <-
-  r |> 
+  r %>% 
   ggplot(aes(x = Estimate, y = d)) +
   stat_smooth(method = "lm", fullrange = T,
               color = "firebrick4", fill = "firebrick4",
               alpha = 1/5, linewidth = 1/2) +
   geom_vline(xintercept = 0, linetype = 2, color = "grey50") +
   geom_point(size = 2, color = "firebrick4", alpha = 2/3) +
-  geom_text_repel(data = . %>% filter(Loc %in% c("WY", "ND", "ME", "HI", "DC")),  
-                  aes(label = Loc), 
-                  size = 3, seed = 5) +
+  geom_text_repel(
+    data = . %>% 
+      dplyr::filter(Loc %in% c("WY", "ND", "ME", "HI", "DC")),
+    aes(label = Loc), size = 3, seed = 5) +
   scale_x_continuous(limits = c(-2, 2)) +
   coord_cartesian(xlim = range(r$Estimate)) +
   labs(x = "Marriage rate residuals",
@@ -467,14 +463,13 @@ p3 <-
 p3
 ```
 
-To get the ```MedianAgeMarriage_s``` residuals, we have to fit the corresponding model where ```m``` predicts ```a```.
 ```{r}
 b5.4b <-
   brm(data = d,
-      family = gaussian(),
+      family = gaussian,
       a ~ 1 + m,
-      prior = c(prior(normal(0, 0.2), class = Intercept),
-                prior(normal(0, 0.5), class = b),
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
                 prior(exponential(1), class = sigma)),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
       seed = 5,
@@ -483,24 +478,27 @@ b5.4b <-
 
 ```{r}
 p2 <-
-  fitted(b5.4b) |> 
-  data.frame() |> 
-  bind_cols(d) |> 
-  
-  ggplot(aes(x = m, y = a)) +
-  geom_point(size = 2, shape = 1, color = "firebrick4") +
-  geom_segment(aes(xend = m, yend = Estimate),
-               linewidth = 1/4) +
-  geom_line(aes(y = Estimate),
+  add_epred_draws(newdata = b5.4b$data, object = b5.4b) %>% 
+  mean_qi(.epred) %>% 
+
+ggplot(aes(x = m, y = a)) +
+  geom_line(aes(y = .epred),
             color = "firebrick4") +
-  geom_text_repel(data = . %>% filter(Loc %in% c("DC", "HI", "ID")),  
+  geom_segment(aes(xend = m, yend = .epred),
+               linewidth = 1/4) +
+  geom_point(data = d, 
+             aes(y = a),
+             shape = 1, size = 2, color = "firebrick4") +
+  geom_text_repel(data = d %>% filter(Loc %in% c("DC", "HI", "ID")),  
                   aes(label = Loc), 
                   size = 3, seed = 5) +
+  theme_bw() +
   labs(x = "Marriage rate (std)",
        y = "Age at marriage (std)") +
   coord_cartesian(ylim = range(d$a)) +
-  theme_bw() +
-  theme(panel.grid = element_blank())  
+  theme(panel.grid = element_blank())
+
+p2
 ```
 
 ```{r}
@@ -532,12 +530,13 @@ p4
 ```
 
 ```{r}
-p1 + p2 + p3 + p4 + plot_annotation(title = "Understanding multiple regression through residuals")
+p1 + p2 + p3 + p4 + 
+  plot_annotation(title = "Understanding multiple regression through residuals")
 ```
-
-##### 5.1.5.1.1 Rethinking: Residuals are parameters, not data
+##### 5.1.5.1.1 Rethinking: Residuals are parameters, not data.
 ```{r}
-r |> glimpse()
+r %>% 
+  glimpse()
 ```
 
 ```{r}
@@ -564,20 +563,19 @@ r %>%
 
 #### 5.1.5.2 Posterior prediction plots
 ```{r}
-fitted(b5.3) %>%
-  data.frame() %>% 
-  #un-standardize the model predictions
-  mutate_all(~. * sd(d$Divorce) + mean(d$Divorce)) |> 
-  bind_cols(d) %>% 
+divorce_sd = sd(d$Divorce)
+divorce_mean = mean(d$Divorce)
+
+add_epred_draws(b5.3$data, b5.3) %>%
+  mean_qi(.epred) %>%
+  select(d, m, a, .epred, .lower, .upper) %>% 
+  mutate_all(~ . * divorce_sd + divorce_mean) %>% 
   
-  ggplot(aes(x = Divorce, y = Estimate)) +
+  ggplot(aes(x = d, y = .epred)) +
   geom_abline(linetype = 2, color = "grey50", linewidth = .5) +
   geom_point(size = 1.5, color = "firebrick4", alpha = 3/4) +
-  geom_linerange(aes(ymin = Q2.5, ymax = Q97.5),
+  geom_linerange(aes(ymin = .lower, ymax = .upper),
                  linewidth = 1/4, color = "firebrick4") +
-  geom_text(data = . %>% filter(Loc %in% c("ID", "UT", "RI", "ME")),
-            aes(label = Loc),
-            hjust = 1, nudge_x = - 0.25) +
   labs(x = "Observed divorce", y = "Predicted divorce") +
   theme_bw() +
   theme(panel.grid = element_blank())
@@ -585,27 +583,27 @@ fitted(b5.3) %>%
 
 ##### 5.1.5.2.2 Overthinking: Simulating spurious association
 ```{r}
-n <- 100
+n <- 100 # number of cases
 
 set.seed(5)
-
 d_spur <-
-  tibble(x_real = rnorm(n),
-         x_spur = rnorm(n, x_real),
-         y = rnorm(n, x_real))
+  tibble(x_real = rnorm(n), # x_real as Gaussian with mean 0 and SD 1
+         x_spur = rnorm(n, x_real), # x_spur as Gaussian with mean = x_real
+         y = rnorm(n, x_real)) # y as Gaussian with mean = x_real
 ```
 
 ```{r}
-pairs(d_spur, col = "firebrick4")
+pairs(d_spur, col = "firebrick4oke o")
 ```
 
+We may as well fit and evaluate the model
 ```{r}
 b5.0_spur <-
-  brm(data = d_spur, 
+  brm(data = d_spur,
       family = gaussian,
       y ~ 1 + x_real + x_spur,
-      prior = c(prior(normal(0, 0.2), class = Intercept),
-                prior(normal(0, 0.5), class = b),
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
                 prior(exponential(1), class = sigma)),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
       seed = 5,
@@ -616,7 +614,6 @@ b5.0_spur <-
 fixef(b5.0_spur) %>% 
   round(digits = 2)
 ```
-
 ```{r}
 dag_coords <-
   tibble(name = c("r", "s", "y"),
@@ -637,16 +634,16 @@ dagify(s ~ r,
   theme(panel.grid = element_blank()) 
 ```
 
-#### 5.1.5.3 Counterfactual plots
+#### 5.1.5.3 Counterfactual plots.
 ```{r}
 dag_coords <-
   tibble(name = c("A", "M", "D"),
-         x = c(1, 3, 2),
-         y = c(2, 2, 1))
+         x    = c(1, 3, 2),
+         y    = c(2, 2, 1))
 
 dagify(M ~ A,
        D ~ A + M,
-       coords = dag_coords) %>% 
+       coords = dag_coords) %>%
   
   ggplot(aes(x = x, y = y, xend = xend, yend = yend)) +
   geom_dag_point(color = "firebrick", alpha = 1/4, size = 10) +
@@ -658,7 +655,7 @@ dagify(M ~ A,
   theme(panel.grid = element_blank())
 ```
 
-To model the effects of A on M and D AND the effects of A on M with brms, we'll need to invoke the multivariate syntax.
+Specify each model separately in bf() function and save them as objects
 ```{r}
 d_model <- bf(d ~ 1 + a + m)
 m_model <- bf(m ~ 1 + a)
@@ -667,9 +664,9 @@ m_model <- bf(m ~ 1 + a)
 ```{r}
 b5.3_A <-
   brm(data = d,
-      family = gaussian(),
+      family = gaussian,
       d_model + m_model + set_rescor(FALSE),
-      prior = c(prior(normal(0, 0.2), class = Intercept, resp = d),
+      prior = c(prior(normal(0, .2), class = Intercept, resp = d),
                 prior(normal(0, .5), class = b, resp = d),
                 prior(exponential(1), class = sigma, resp = d),
                 
@@ -680,26 +677,25 @@ b5.3_A <-
       seed = 5,
       file = "fits/b05.03_A")
 ```
+
 ```{r}
 print(b5.3_A)
 ```
 
-Use predict to make our version of the counterfactual plot in the left panel of Figure 5.6.
+Use predict to make counterfactual plot in the left panel of Figure 5.6.
 ```{r}
-nd <- tibble(
-  a = seq(from = -2, to = 2, length.out = 30),
-  m = 0)
+nd <- tibble(a = seq(from = -2, to = 2, length.out = 30),
+             m = 0)
 
 p1 <-
-  predict(b5.3_A,
-          resp = "d",
-          newdata = nd) %>% 
-  data.frame() %>% 
-  bind_cols(nd) %>% 
+  add_predicted_draws(nd, b5.3_A, resp = "d") %>% 
+  mean_qi(.prediction) %>% 
   
-  ggplot(aes(x = a, y = Estimate, ymin = Q2.5, ymax = Q97.5)) +
-  geom_smooth(stat = "identity",
-              fill = "firebrick", color = "firebrick4", alpha = 1/5, linewidth = 1/4) +
+  ggplot(aes(x = a, y = .prediction, ymin = .lower,
+             ymax = .upper)) +
+  geom_smooth(stat = "identity", fill = "firebrick",
+              color = "firebrick4", alpha = 1/5,
+              linewidth = 1/4) +
   labs(subtitle = "Total counterfactual effect of A on D",
        x = "manipulated A",
        y = "counterfactual D") +
@@ -714,39 +710,40 @@ p1
 nd <- tibble(a = seq(from = -2, to = 2, length.out = 30))
 
 p2 <-
-  predict(b5.3_A,
-          resp = "m",
-          newdata = nd) %>% 
-  data.frame() %>% 
-  bind_cols(nd) %>% 
+  add_predicted_draws(nd, b5.3_A, resp = "m") %>% 
+  mean_qi(.prediction) %>% 
   
-  ggplot(aes(x = a, y = Estimate, ymin = Q2.5, ymax = Q97.5)) +
-  geom_smooth(stat = "identity",
-              fill = "firebrick", color = "firebrick4", alpha = 1/5, linewidth = 1/4) +
+  ggplot(aes(x = a, y = .prediction, ymin = .lower, 
+             ymax = .upper)) +
+  geom_smooth(stat = "identity", fill = "firebrick",
+              color = "firebrick4", alpha = 1/5, 
+              linewidth = 1/4) +
   labs(subtitle = "Counterfactual effect of A on M",
-       x = "manipulated A",
-       y = "counterfactual M") +
+       x = "manipulated A", y = "counterfactual M") +
   coord_cartesian(ylim = c(-2, 2)) +
   theme_bw() +
-  theme(panel.grid = element_blank()) 
+  theme(panel.grid = element_blank())
 
 p1 + p2 + plot_annotation(title = "Counterfactual plots for the multivariate divorce model")
 ```
-The expected causal effect of increasing median age at marriage from 20 to 30
+
+With our brms + tiduverse paradigm, we might compute "the expected causal effect of increasing median age at marriage from 20 to 30"
 ```{r}
-nd <- tibble(a = (c(20, 30) - 26.1) / 1.24,
+# new data frame, standardized to mean 26.1 and std dev 1.24
+nd <- tibble(name = c("a20", "a30"),
+             a = (c(20, 30) - 26.1) / 1.24,
              m = 0)
 
 predict(b5.3_A,
         resp = "d",
         newdata = nd,
-        summary = F) %>% 
-  data.frame() %>% 
-  set_names("a20", "a30") %>% 
-  mutate(difference = a30 - a20) %>% 
+        summary = F) %>%
+  data.frame() %>%
+  set_names("a20", "a30") %>%
+  mutate(difference = a30 - a20) %>%
   summarise(mean = mean(difference))
 ```
-DAG plot of above counterfactual (we modify the DAG so that no arrows enter X)
+
 ```{r}
 dag_coords <-
   tibble(name = c("A", "M", "D"),
@@ -766,7 +763,6 @@ dagify(D ~ A + M,
   theme(panel.grid = element_blank()) 
 ```
 
-New counterfactual plot focusing on M -> D, holding A = 0
 ```{r}
 nd <- tibble(m = seq(from = -2, to = 2, length.out = 30),
              a = 0)
@@ -778,19 +774,20 @@ predict(b5.3_A,
   bind_cols(nd) %>% 
   
   ggplot(aes(x = m, y = Estimate, ymin = Q2.5, ymax = Q97.5)) +
-  geom_smooth(stat = "identity",
-              fill = "firebrick", color = "firebrick4", alpha = 1/5, linewidth = 1/4) +
+  geom_smooth(stat = "identity", fill = "firebrick",
+              color = "firebrick4", alpha = 1/5, 
+              linewidth = 1/4) +
   labs(subtitle = "Total counterfactual effect of M on D",
        x = "manipulated M",
        y = "counterfactual D") +
   coord_cartesian(ylim = c(-2, 2)) +
   theme_bw() +
-  theme(panel.grid = element_blank()) 
+  theme(panel.grid = element_blank())
 ```
-
-##### 5.1.5.3.1 Overthinking: Simulating counterfactuals
+##### 5.1.5.3.1 Overthinking: Simulating counterfactuals.
 ```{r}
-post <- as_draws_df(b5.3_A)
+post <-
+  as_draws_df(b5.3_A)
 ```
 
 ```{r}
@@ -799,35 +796,43 @@ set.seed(5)
 post <-
   post %>% 
   expand_grid(a = seq(from = -2, to = 2, length.out = 30)) %>% 
-  mutate(m_sim = rnorm(n(), mean = b_m_Intercept + b_m_a * a, sd = sigma_m)) %>% 
-  mutate(d_sim = rnorm(n(), mean = b_d_Intercept + b_d_a * a + b_d_m * m_sim, sd = sigma_d)) %>% 
+  mutate(m_sim = rnorm(n(), mean = b_m_Intercept + b_m_a * a,
+                       sd = sigma_m)) %>% 
+  mutate(d_sim = rnorm(n(), mean = b_d_Intercept + b_d_a * a +
+                         b_d_m * m_sim, sd = sigma_d)) %>% 
   pivot_longer(ends_with("sim")) %>% 
   group_by(a, name) %>% 
-  summarise(mean = mean(value),
+  summarise(mean = mean(value), 
             ll = quantile(value, prob = .025),
-            ul = quantile(value, prob = .975))
+            ul = quantile(value, prob = .975),
+            .groups = "drop")
+```
 
+
+```{r}
+# what did we do?
 head(post)
 ```
 
 ```{r}
 post %>% 
-  mutate(dv = if_else(name == "d_sim", "predictions for D", "predictions for M")) %>% 
+  mutate(dv = if_else(name == "d_sim",
+                      "predictions for D",
+                      "predictions for M")) %>% 
   ggplot(aes(x = a, y = mean, ymin = ll, ymax = ul)) +
-  geom_smooth(stat = "identity",
-              fill = "firebrick", color = "firebrick4", alpha = 1/5, linewidth = 1/4) +
+  geom_smooth(stat = "identity", fill = "firebrick",
+              color = "firebrick4", alpha = 1/5, 
+              linewidth = 1/4) +
   labs(title = "Hand-made counterfactual plots for the multivariate divorce model",
-       x = "manipulated A",
-       y = "counterfactual") +
+       x = "manipulated A", y = "counterfactual") +
   coord_cartesian(ylim = c(-2, 2)) +
-  theme_bw() +
+  theme_bw() + 
   theme(panel.grid = element_blank(),
         strip.background = element_blank()) +
   facet_wrap(~ dv)
 ```
 
 ## 5.2 Masked relationship
-Load milk data
 ```{r}
 data(milk, package = "rethinking")
 d <- milk
@@ -835,20 +840,20 @@ rm(milk)
 
 glimpse(d)
 ```
-Inspect the primary variables in the data with the ```pairs()``` function
+
 ```{r}
 d %>% 
   select(kcal.per.g, mass, neocortex.perc) %>% 
   pairs(col = "firebrick4")
 ```
+
 Standardize variables
 ```{r}
 d <-
   d %>% 
-  mutate(kcal.per.g_s = (kcal.per.g - mean(kcal.per.g)) / sd(kcal.per.g),
-         log_mass_s = (log(mass) - mean(log(mass))) / sd(log(mass)),
-         neocortex.perc_s = (neocortex.perc - mean(neocortex.perc, na.rm = T)) / sd(neocortex.perc, na.rm = T)
-         )
+  mutate(kcal.per.g_s     = (kcal.per.g - mean(kcal.per.g)) / sd(kcal.per.g), 
+         log_mass_s       = (log(mass) - mean(log(mass))) / sd(log(mass)), 
+         neocortex.perc_s = (neocortex.perc - mean(neocortex.perc, na.rm = T)) / sd(neocortex.perc, na.rm = T))
 ```
 
 ```{r}
@@ -864,7 +869,7 @@ b5.5_draft <-
       sample_prior = T,
       file = "fits/b05.05_draft")
 ```
-Remove cases with missing values with ```tidyr::drop_na()``` and ```ends_with()```
+
 ```{r}
 dcc <-
   d %>% 
@@ -873,13 +878,14 @@ dcc <-
 # how many rows did we drop?
 nrow(d) - nrow(dcc)
 ```
-Use update to refit the model with the altered data
+
 ```{r}
 b5.5_draft <-
   update(b5.5_draft,
          newdata = dcc,
          seed = 5)
 ```
+
 Prior predictive check
 ```{r}
 set.seed(5)
@@ -891,8 +897,8 @@ prior_draws(b5.5_draft) %>%
   mutate(kcal.per.g_s = Intercept + b * neocortex.perc_s) %>% 
   
   ggplot(aes(x = neocortex.perc_s, y = kcal.per.g_s)) +
-  geom_line(aes(group = rowname),
-            color = "firebrick", alpha = .4) +
+  geom_line(aes(group = rowname), color = "firebrick",
+            alpha = .4) +
   coord_cartesian(ylim = c(-2, 2)) +
   labs(x = "neocortex percent (std)",
        y = "kilocal per g (std)",
@@ -900,19 +906,17 @@ prior_draws(b5.5_draft) %>%
   theme_bw() +
   theme(panel.grid = element_blank())
 ```
-How's the posterior turn out?
 ```{r}
 print(b5.5_draft)
 ```
-
-Tighten up our priors and fit b5.5
+Let's tighten up priors and fit b5.5
 ```{r}
-b5.5 <- 
-  brm(data = dcc, 
+b5.5 <-
+  brm(data = dcc,
       family = gaussian,
       kcal.per.g_s ~ 1 + neocortex.perc_s,
-      prior = c(prior(normal(0, 0.2), class = Intercept),
-                prior(normal(0, 0.5), class = b),
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
                 prior(exponential(1), class = sigma)),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
       seed = 5,
@@ -922,18 +926,20 @@ b5.5 <-
 
 ```{r}
 set.seed(5)
+
 prior_draws(b5.5) %>% 
   slice_sample(n = 50) %>% 
   rownames_to_column() %>% 
   expand_grid(neocortex.perc_s = c(-2, 2)) %>% 
   mutate(kcal.per.g_s = Intercept + b * neocortex.perc_s) %>% 
   
-  ggplot(aes(x = neocortex.perc_s, y = kcal.per.g_s, group = rowname)) +
-  geom_line(color = "firebrick", alpha = .4) +
+  ggplot(aes(x = neocortex.perc_s, y = kcal.per.g_s)) +
+  geom_line(aes(group = rowname), color = "firebrick",
+            alpha = .4) +
   coord_cartesian(ylim = c(-2, 2)) +
-  labs(subtitle = "Intercept ~ dnorm(0, 0.2)\nb ~ dnorm(0, 0.5)",
-       x = "neocortex percent (std)",
-       y = "kilocal per g (std)") +
+  labs(x = "neocortex percent (std)",
+       y = "kilocal per g (std)",
+       subtitle = "Intercept ~ dnorm(0, 0.2)\nb ~ dnorm(0, 0.5)") +
   theme_bw() +
   theme(panel.grid = element_blank())
 ```
@@ -942,17 +948,16 @@ prior_draws(b5.5) %>%
 print(b5.5)
 ```
 
-Compare parameter estimates between draft and final model
 ```{r}
 # wrangle
 bind_rows(
   as_draws_df(b5.5_draft) %>% select(b_Intercept:sigma),
   as_draws_df(b5.5) %>% select(b_Intercept:sigma)
-) %>% 
+  )  %>% 
   mutate(fit = rep(c("b5.5_draft", "b5.5"), each = n() / 2)) %>% 
   pivot_longer(-fit) %>% 
   group_by(name, fit) %>% 
-  summarize(mean = mean(value),
+  summarise(mean = mean(value),
             ll = quantile(value, prob = .025),
             ul = quantile(value, prob = .975)) %>% 
   mutate(fit = factor(fit, levels = c("b5.5_draft", "b5.5"))) %>% 
@@ -961,7 +966,7 @@ bind_rows(
   ggplot(aes(x = mean, y = fit, xmin = ll, xmax = ul)) +
   geom_pointrange(color = "firebrick") +
   geom_hline(yintercept = 0, color = "firebrick", alpha = 1/5) +
-  labs(x = "posterior",
+  labs(x = "posterior", 
        y = NULL) +
   theme_bw() +
   theme(axis.text.y = element_text(hjust = 0),
@@ -974,18 +979,19 @@ bind_rows(
 ```{r}
 nd <- tibble(neocortex.perc_s = seq(from = -2.5, to = 2, length.out = 30))
 
-fitted(b5.5,
-       newdata = nd,
-       probs = c(.025, .975, .25, .75)) %>% 
-  data.frame() %>% 
-  bind_cols(nd) %>% 
+nd %>% 
+  add_epred_draws(b5.5) %>% 
+  mean_qi(.epred, .width = c(.5, .95)) %>% 
   
-  ggplot(aes(x = neocortex.perc_s, y = Estimate)) +
-  geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5),
+  ggplot(aes(x = neocortex.perc_s, y = .epred)) +
+  geom_ribbon(data = . %>% filter(.width == 0.50),
+              aes(ymin = .lower, ymax = .upper),
               fill = "firebrick", alpha = 1/5) +
-  geom_smooth(aes(ymin = Q25, ymax = Q75),
-              stat = "identity",
-              fill = "firebrick4", color = "firebrick4", alpha = 1/5, linewidth = 1/4) +
+  geom_smooth(data = . %>% filter(.width == 0.95),
+              aes(ymin = .lower, ymax = .upper),
+              stat = "identity", fill = "firebrick4",
+              color = "firebrick4", alpha = 1/5,
+              linewidth = 1/2) +
   geom_point(data = dcc,
              aes(x = neocortex.perc_s, y = kcal.per.g_s),
              size = 2, color = "firebrick4") +
@@ -997,7 +1003,6 @@ fitted(b5.5,
   theme(panel.grid = element_blank())
 ```
 
-Now we use ```log_mass_s``` as the new sole predictor
 ```{r}
 b5.6 <-
   brm(data = dcc,
@@ -1006,7 +1011,7 @@ b5.6 <-
       prior = c(prior(normal(0, .2), class = Intercept),
                 prior(normal(0, .5), class = b),
                 prior(exponential(1), class = sigma)),
-      iter = 2000, warmup = 1000, chains = 4, cores = 5,
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
       seed = 5,
       sample_prior = T,
       file = "fits/b05.06")
@@ -1019,20 +1024,21 @@ print(b5.6)
 ```{r}
 nd <- tibble(log_mass_s = seq(from = -2.5, to = 2.5, length.out = 30))
 
-fitted(b5.6,
-       newdata = nd,
-       probs = c(.025, .975, .25, .75)) %>% 
-  data.frame() %>% 
-  bind_cols(nd) %>% 
+nd %>% 
+  add_epred_draws(b5.6) %>% 
+  mean_qi(.epred, .width = c(.5, .95)) %>% 
   
-  ggplot(aes(x = log_mass_s, y = Estimate)) +
-  geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5),
+  ggplot(aes(x = log_mass_s, y = .epred)) +
+  geom_ribbon(data = . %>% filter(.width == 0.5),
+              aes(ymin = .lower, ymax = .upper),
               fill = "firebrick", alpha = 1/5) +
-  geom_smooth(aes(ymin = Q25, ymax = Q75),
-              stat = "identity",
-              fill = "firebrick4", color = "firebrick4", alpha = 1/5, linewidth = 1/2) +
+  geom_smooth(data = . %>% filter(.width == 0.95),
+              aes(ymin = .lower, ymax = .upper),
+              stat = "identity", color = "firebrick4", 
+              fill = "firebrick4", alpha = 1/5,
+              linewidth = 1/2) +
   geom_point(data = dcc,
-             aes(y = kcal.per.g_s),
+             aes(x = log_mass_s, y = kcal.per.g_s),
              size = 2, color = "firebrick4") +
   coord_cartesian(xlim = range(dcc$log_mass_s),
                   ylim = range(dcc$kcal.per.g_s)) +
@@ -1041,13 +1047,11 @@ fitted(b5.6,
   theme_bw() +
   theme(panel.grid = element_blank())
 ```
-
-Fit with both predictors included in a multivariable model with the following formula
 ```{r}
 b5.7 <-
   brm(data = dcc,
       family = gaussian,
-      formula = kcal.per.g_s ~ 1 + neocortex.perc_s + log_mass_s,
+      kcal.per.g_s ~ 1 + neocortex.perc_s + log_mass_s,
       prior = c(prior(normal(0, .2), class = Intercept),
                 prior(normal(0, .5), class = b),
                 prior(exponential(1), class = sigma)),
@@ -1063,20 +1067,20 @@ print(b5.7)
 ```{r}
 bind_cols(
   as_draws_df(b5.5) %>% 
-    transmute("b5.5_beta[N]" = b_neocortex.perc_s),
+    transmute(`b5.5_beta[N]` = b_neocortex.perc_s),
   as_draws_df(b5.6) %>% 
-    transmute("b5.6_beta[M]" = b_log_mass_s),
+    transmute(`b5.6_beta[M]` = b_log_mass_s),
   as_draws_df(b5.7) %>% 
-    transmute("b5.7_beta[N]" = b_neocortex.perc_s,
-              "b5.7_beta[M]" = b_log_mass_s),
-) %>% 
+    transmute(`b5.7_beta[N]` = b_neocortex.perc_s,
+              `b5.7_beta[M]` = b_log_mass_s)
+  ) %>% 
   pivot_longer(everything()) %>% 
   group_by(name) %>% 
-  summarize(mean = mean(value),
-            ll = quantile(value, prob = .025),
-            ul = quantile(value, prob = .975)) %>% 
+  summarise(mean = mean(value),
+            ll   = quantile(value, prob = .025),
+            ul   = quantile(value, prob = .975)) %>% 
   separate(name, into = c("fit", "parameter"), sep = "_") %>% 
-  # complete(fit, parameter
+  # complete(fit, parameter) %>% 
   
   ggplot(aes(x = mean, y = fit, xmin = ll, xmax = ul)) +
   geom_pointrange(color = "firebrick") +
@@ -1087,13 +1091,12 @@ bind_cols(
         strip.background = element_rect(fill = "transparent", color = "transparent")) +
   facet_wrap(~ parameter, ncol = 1, labeller = label_parsed)
 ```
-look at pairs with transformed variables
+
 ```{r}
 dcc %>% 
   select(ends_with("_s")) %>% 
   pairs(col = "firebrick4")
 ```
-Pairs plot using GGally package (tidyverse standard)
 ```{r}
 library(GGally)
 
@@ -1102,35 +1105,36 @@ dcc %>%
   ggpairs()
 ```
 
-Customize GGally pairs
 ```{r}
-my_diag <- function(data, mapping, ...){
-  ggplot(data = data, mapping = mapping) +
+# define custom functions
+my_diag <- function(data, mapping, ...) {
+  ggplot(data = data, mapping = mapping) + 
     geom_density(fill = "firebrick4", linewidth = 0)
 }
 
-my_lower <- function(data, mapping, ...){
-  ggplot(data = data, mapping = mapping) +
-    geom_smooth(method = "lm", color = "firebrick4", linewidth = 1, se = F) +
+my_lower <- function(data, mapping, ...) {
+  ggplot(data = data, mapping = mapping) + 
+    geom_smooth(method = "lm", color = "firebrick4", linewidth = 1, 
+                se = F) +
     geom_point(color = "firebrick", alpha = .8, size = 1/3)
-}
+  }
 
+# plot
 dcc %>% 
   select(ends_with("_s")) %>% 
   ggpairs(upper = list(continuous = wrap("cor", family = "sans", color = "black")),
-          diag = list(continuous = my_diag),
-          lower = list(continuous = my_lower)) +
-  theme_bw() + 
+          # plug those custom functions into `ggpairs()`
+          diag  = list(continuous = my_diag),
+          lower = list(continuous = my_lower)) + 
+  theme_bw() +
   theme(axis.text = element_blank(),
         axis.ticks = element_blank(),
         panel.grid = element_blank(),
         strip.background = element_rect(fill = "white", color = "white"))
 ```
 
-DAG function
 ```{r}
-gg_dag <- function(d) {
-  
+gg_dag <- function(d){
   d %>% 
     ggplot(aes(x = x, y = y, xend = xend, yend = yend)) +
     geom_dag_point(color = "firebrick", alpha = 1/4, size = 10) +
@@ -1144,7 +1148,6 @@ gg_dag <- function(d) {
 }
 ```
 
-Create three DAGs
 ```{r}
 # left DAG
 dag_coords <-
@@ -1180,12 +1183,10 @@ p3 <-
              shape = 1, size = 10, stroke = 1.25, color = "firebrick4")
 ```
 
-Combine gg_dag using patchwork
 ```{r}
 p1 + p2 + p3
 ```
 
-Counterfactual plots for multivariate linear regression
 ```{r}
 nd <- tibble(neocortex.perc_s = seq(from = -2.5, to = 2, length.out = 30),
              log_mass_s       = 0)
@@ -1211,36 +1212,65 @@ p1 <-
 ```
 
 ```{r}
-nd <- tibble(log_mass_s       = seq(from = -2.5, to = 2.5, length.out = 30),
-             neocortex.perc_s = 0)
+nd <- tibble(neocortex.perc_s = 
+               seq(from = -2.5, to = 2.5, length.out = 30),
+             log_mass_s = 0)
 
-p2 <-
-  fitted(b5.7, 
-         newdata = nd,
-         probs = c(.025, .975, .25, .75)) %>%
-  data.frame() %>%
-  bind_cols(nd) %>% 
+p1 <-
+  nd %>% 
+  add_epred_draws(b5.7) %>% 
+  mean_qi(.epred, .width = c(.5, .95)) %>% 
   
-  ggplot(aes(x = log_mass_s, y = Estimate)) +
-  geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5),
+  ggplot(aes(x = neocortex.perc_s, y = .epred)) +
+  geom_ribbon(data = . %>% filter(.width == .50),
+              aes(ymin = .lower, ymax = .upper),
               fill = "firebrick", alpha = 1/5) +
-  geom_smooth(aes(ymin = Q25, ymax = Q75),
+  geom_smooth(data = . %>% filter(.width == .95),
               stat = "identity",
-              fill = "firebrick4", color = "firebrick4", alpha = 1/5, linewidth = 1/2) +
-  coord_cartesian(xlim = range(dcc$log_mass_s), 
+              aes(ymin = .lower, ymax = .upper),
+              color = "firebrick4", fill = "firebrick4",
+              alpha = 1/5, linewidth = 1/2) +
+  coord_cartesian(xlim = range(dcc$neocortex.perc_s),
                   ylim = range(dcc$kcal.per.g_s)) +
   labs(subtitle = "Counterfactual holding N = 0",
        x = "log body mass (std)",
        y = "kilocal per g (std)")
+```
 
-# combine
+```{r}
+nd <- tibble(log_mass_s = 
+               seq(from = -2.5, to = 2.5, length.out = 30),
+             neocortex.perc_s = 0)
+
+p2 <-
+  nd %>% 
+  add_epred_draws(b5.7) %>% 
+  mean_qi(.epred, .width = c(.5, .95)) %>% 
+  
+  ggplot(aes(x = log_mass_s, y = .epred)) +
+  geom_ribbon(data = . %>% filter(.width == .50),
+              aes(ymin = .lower, ymax = .upper),
+              fill = "firebrick", alpha = 1/5) +
+  geom_smooth(data = . %>% filter(.width == .95),
+              stat = "identity",
+              aes(ymin = .lower, ymax = .upper),
+              color = "firebrick4", fill = "firebrick4",
+              alpha = 1/5, linewidth = 1/2) +
+  coord_cartesian(xlim = range(dcc$log_mass_s),
+                  ylim = range(dcc$kcal.per.g_s)) +
+  labs(subtitle = "Counterfactual holding N = 0",
+       x = "log body mass (std)",
+       y = "kilocal per g (std)")
+```
+
+```{r}
 p1 + p2 + 
   plot_annotation(title = "Figure 5.9 [bottom row]. Milk energy and neocortex among primates.") &
-  theme_bw() &
+  theme_bw() & 
   theme(panel.grid = element_blank())
 ```
 
-#### 5.2.0.1 Overthinking: Simulating a masking relationship.
+#### 5.2.0.1 Overthinking: Simulating a masking relationship
 ```{r}
 dag_coords <-
   tibble(name = c("M", "N", "K"),
@@ -1347,25 +1377,23 @@ rm(Howell1)
 d %>% glimpse()
 ```
 
-Create a male dummy where beta1 is the expected difference between males and females for height.
 ```{r}
 set.seed(5)
 
 prior <-
   tibble(mu_female = rnorm(1e4, mean = 178, sd = 20)) %>% 
-  mutate(mu_male = mu_female + rnorm(1e4, mean = 0, sd = 10))
+  mutate(mu_male = mu_female + rnorm(1e4, mean = 0, sd =10))
 
 prior %>% 
   pivot_longer(everything()) %>% 
   group_by(name) %>% 
-  summarize(mean = mean(value),
+  summarise(mean = mean(value),
             sd = sd(value),
             ll = quantile(value, prob = .025),
             ul = quantile(value, prob = .975)) %>% 
   mutate_if(is.double, round, digits = 2)
 ```
 
-Prior predictive distributions
 ```{r}
 prior %>% 
   pivot_longer(everything()) %>% 
@@ -1376,21 +1404,19 @@ prior %>%
   scale_y_continuous(NULL, breaks = NULL) +
   xlab("prior predictive distribution for our dummy groups") +
   theme_bw() +
-  theme(panel.grid = element_blank(),
-        legend.position = c(.82, .83))
+  theme(panel.grid = element_blank())
 ```
 
-Categorical variable using index variable
 ```{r}
 d <-
   d %>% 
-  mutate(sex = ifelse(male ==1, 2, 1))
+  mutate(sex = ifelse(male == 1, 2, 1))
 
 head(d)
 ```
-
 ```{r}
-d <- d %>% 
+d <-
+  d %>% 
   mutate(sex = factor(sex))
 ```
 
@@ -1398,7 +1424,7 @@ d <- d %>%
 b5.8 <-
   brm(data = d,
       family = gaussian,
-      formula = height ~ 0 + sex,
+      height ~ 0 + sex,
       prior = c(prior(normal(178, 20), class = b),
                 prior(uniform(0, 50), class = sigma, ub = 50)),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
@@ -1410,7 +1436,7 @@ b5.8 <-
 print(b5.8)
 ```
 
-Compute difference score
+Compute the difference scores
 ```{r}
 library(tidybayes)
 
@@ -1421,7 +1447,7 @@ as_draws_df(b5.8) %>%
   mean_qi(value, .width = .89)
 ```
 
-### 5.3.2 Many categories
+### 5.3.2 Many categories.
 ```{r}
 data(milk, package = "rethinking")
 d <- milk
@@ -1431,11 +1457,12 @@ rm(milk)
 ```{r}
 d %>% distinct(clade)
 ```
-Make factor our of clade
+
 ```{r}
 d <-
-  d %>% 
-  mutate(kcal.per.g_s = (kcal.per.g - mean(kcal.per.g)) / sd(kcal.per.g))
+  d %>%
+  mutate(kcal.per.g_s = (kcal.per.g - mean(kcal.per.g)) /
+           sd(kcal.per.g))
 ```
 
 ```{r}
@@ -1444,10 +1471,10 @@ b5.9 <-
       family = gaussian,
       kcal.per.g_s ~ 0 + clade,
       prior = c(prior(normal(0, .5), class = b),
-              prior(exponential(1), class = sigma)),
-            iter = 2000, warmup = 1000, chains = 4, cores = 4,
-            seed = 5,
-            file = "fits/b05.09")
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 5,
+      file = "fits/b05.09")
 ```
 
 ```{r}
@@ -1480,25 +1507,28 @@ post %>%
 library(tidybayes)
 
 post %>% 
-  select(starts_with("b")) %>% 
-  set_names(distinct(d, clade) %>% arrange(clade) %>% pull()) %>% 
+  select(starts_with("b_")) %>% 
+  set_names(distinct(d, clade) %>% arrange(clade) %>% 
+              pull()) %>% 
   pivot_longer(everything()) %>% 
   
-  ggplot(aes(x = value, y = reorder(name, value))) +  # note how we used `reorder()` to arrange the coefficients
-  geom_vline(xintercept = 0, color = "firebrick4", alpha = 1/10) +
-  stat_pointinterval(point_interval = mode_hdi, .width = .89, 
+  ggplot(aes(x = value, y = reorder(name, value))) + # note how we used reorder() to arrange the coefficients
+  geom_vline(xintercept = 0, color = "firebrick4", 
+             alpha = 1/10) +
+  stat_pointinterval(point_interval = mode_hdi, .width = .89,
                      size = 1, color = "firebrick4") +
   labs(title = "My tidybayes-based coefficient plot",
-       x = "expected kcal (std)", 
+       x = "exptected kcal (std)",
        y = NULL) +
   theme_bw() +
   theme(axis.text.y = element_text(hjust = 0),
         axis.ticks.y = element_blank(),
         panel.grid = element_blank())
 ```
-Simulate made up categories
+Let's simulate some made up categories
 ```{r}
-houses <- c("Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin")
+houses <- c("Gryffindor", "Hufflepuff", "Ravenclaw",
+            "Slytherin")
 
 set.seed(63)
 d <-
@@ -1510,7 +1540,7 @@ d <-
 b5.10 <-
   brm(data = d,
       family = gaussian,
-      formula = kcal.per.g_s ~ 0 + clade + house,
+      kcal.per.g_s ~ 0 + clade + house,
       prior = c(prior(normal(0, .5), class = b),
                 prior(exponential(1), class = sigma)),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
@@ -1522,7 +1552,6 @@ b5.10 <-
 print(b5.10)
 ```
 
-Using the syntax above we lose the first category of the second variable (house). We will use non-linear syntax to fix this
 ```{r}
 b5.11 <-
   brm(data = d,
@@ -1568,12 +1597,12 @@ as_draws_df(b5.11) %>%
 ```
 
 ## 5.4 Bonus: We can model categorical variables in more ways than one
-### 5.4.1 You can use a dummy
+### 5.4.1 You can use a dummy.
 ```{r}
-b5.8$data %>% head()
+b5.8$data %>% 
+  head()
 ```
 
-Convert our index variable sex into two dummy variables, which we call male and female
 ```{r}
 d <-
   b5.8$data %>% 
@@ -1600,7 +1629,8 @@ b5.8b <-
 print(b5.8b)
 ```
 
-### 5.4.2 Consider contrast coding
+### 5.4.2 Consider contrast coding.
+Contrast coding offers something of a blend between the index and dummy approach. Consider out new contrast variable, sex_c.
 ```{r}
 d <-
   d %>% 
@@ -1608,15 +1638,16 @@ d <-
 
 head(d)
 ```
-
+sex_c == 0.5 for males and sex_c == 0.5 for females. Intercept is now the average of the mean heights of males and females and slope is the difference when subtracting the mean height of males from the mean height of females.
 ```{r}
-b5.8c <- 
-  brm(data = d, 
+b5.8c <-
+  brm(data = d,
       family = gaussian,
       height ~ 1 + sex_c,
       prior = c(prior(normal(178, 20), class = Intercept),
                 prior(normal(0, 10), class = b),
-                prior(uniform(0, 50), class = sigma, ub = 50)),
+                prior(uniform(0, 50), class = sigma, 
+                      ub = 50)),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
       seed = 5,
       file = "fits/b05.08c")
@@ -1646,8 +1677,8 @@ d %>%
 
 ```{r}
 as_draws_df(b5.8c) %>% 
-  mutate(male            = b_Intercept - b_sex_c * 0.5,
-         female          = b_Intercept + b_sex_c * 0.5,
+  mutate(male = b_Intercept - b_sex_c * 0.5,
+         female = b_Intercept + b_sex_c * 0.5,
          `female - male` = b_sex_c) %>% 
   pivot_longer(male:`female - male`) %>% 
   
@@ -1661,7 +1692,7 @@ as_draws_df(b5.8c) %>%
   facet_wrap(~ name, scales = "free")
 ```
 
-### 5.4.3 There's always the multilevel ANOVA approach
+### 5.4.3 There's always the multilevel ANOVA approach.
 ```{r}
 d <-
   b5.9$data
@@ -1670,11 +1701,11 @@ head(d)
 ```
 
 ```{r}
-b5.9b <- 
-  brm(data = d, 
+b5.9b <-
+  brm(data = d,
       family = gaussian,
       kcal.per.g_s ~ 1 + (1 | clade),
-      prior = c(prior(normal(0, 0.5), class = Intercept),
+      prior = c(prior(normal(0, .5), class = Intercept),
                 prior(exponential(1), class = sigma),
                 prior(exponential(1), class = sd)),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,

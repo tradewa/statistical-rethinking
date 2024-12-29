@@ -9,98 +9,94 @@ rm(list = ls())
 
 8M4. Repeat the tulips analysis, but this time use priors that constrain the effect of water to be positive and the effect of shade to be negative. Use prior predictive simulation. What do these prior asumptions mean for the interaction prior, if anything?
 ```{r}
-data("tulips", package = "rethinking")
+data(tulips, package = "rethinking")
+d <- tulips
+rm(tulips)
 
-tulip_dat <- tulips %>% 
-  as_tibble() %>% 
+d <-
+  d %>% 
   mutate(light = -1 * shade,
          blooms_std = blooms / max(blooms),
          water_cent = water - mean(water),
          shade_cent = shade - mean(shade),
          light_cent = light - mean(light))
-
-b8m4 <-
-  brm(blooms_std ~ 1 + water_cent + light_cent + water_cent:light_cent,
-      data = tulip_dat,
-      family = gaussian,
-      prior = c(prior(normal(.5, .25), class = Intercept),
-                prior(normal(0, .25), class = b, lb = 0),
-                prior(exponential(1), class = sigma)),
-      iter = 4000, warmup = 2000, chains = 4, cores = 4, 
-      seed =  1234,
-      file = "fits/b8m4")
 ```
 
 ```{r}
+b8m4 <- 
+  brm(data = d,
+      family = gaussian,
+      blooms_std ~ 1 + water_cent + light_cent + water_cent:light_cent,
+      prior = c(prior(normal(.5, .25), class = Intercept),
+                prior(normal(0, .25), class = b, lb = 0),
+                prior(exponential(1), class = sigma)),
+      iter = 4000, warmup = 1000, chains = 4, cores = 4, 
+      seed = 1234,
+      file = "fits/b8m4")
+
 summary(b8m4)
 ```
 
 ```{r}
-new_tulip <- crossing(water_cent = -1:1,
-                      light_cent = -1:1)
+new_tulip <-
+  crossing(water_cent = -1:1,
+           light_cent = -1:1)
 
-points <- tulip_dat %>% 
+points <- 
+  d %>% 
   expand(nesting(water_cent, light_cent, blooms_std)) %>% 
   mutate(light_grid = glue("light_cent = {light_cent}"))
 
-to_string <- as_labeller(c(`-1` = "Light = -1", `0` = "Light = 0",
-                           `1` = "Light = 1"))
+to_string <-
+  as_labeller(c(`-1` = "Light = -1", `0` = "Light = 0",
+                `1` = "Light = 1"))
 
 new_tulip %>% 
   add_epred_draws(b8m4, ndraws = 50) %>% 
   ungroup() %>% 
   ggplot(aes(x = water_cent, y = .epred)) +
-  facet_wrap(~light_cent, nrow = 1,
-             labeller = to_string) +
+  facet_wrap(~ light_cent, nrow = 1, labeller = to_string) +
   geom_line(aes(group = .draw), alpha = .4) +
-  geom_point(data = points, aes(y = blooms_std), color = "#009FB7") +
+  geom_point(data = points, aes(y = blooms_std), 
+             color = "#009FB7") +
   scale_x_continuous(breaks = -1:1) +
-  labs(x = "Water (centered)", y = "Blooms (standardized)")
+  labs(x = "Water (centered)",
+       y = "Blooms (standardized)")
 ```
 
 ```{r}
 b8m4p <-
-  update(b8m4,
-         sample_prior = "only",
-         iter = 4000, warmup = 2000, chains = 4, cores = 4, 
-         seed = 1234,
-         file = "fits/b8m4p.rds")
+  update(b8m4, sample_prior = "only",
+         iter = 4000, warmup = 2000, chains = 4, cores = 4,
+         seed = 1234, file = "fits/b8m4p")
 
 new_tulip %>% 
   add_epred_draws(b8m4p, ndraws = 50) %>% 
   ungroup() %>% 
   ggplot(aes(x = water_cent, y = .epred)) +
-  facet_wrap(~light_cent, nrow = 1,
-             labeller = to_string) +
+  facet_wrap(~ light_cent, nrow = 1, labeller = to_string) +
   geom_line(aes(group = .draw), alpha = .3) +
   geom_hline(yintercept = c(0, 1), linetype = "dashed") +
   scale_x_continuous(breaks = -1:1) +
-  labs(x = "Water (centered)", y = "Blooms (standardized)")
+  labs(x = "Water (centered)",
+       y = "Blooms (standardized)")
 ```
 
-**8H1.** Return to the data(tulips) example in the chapter. Now include the bed variable as a predictor in the interaction model. Don’t interact bed with the other predictors; just include it as a main effect. Note that bed is categorical. So to use it properly, you will need to either construct dummy variables, or rather an index variable, as explained in Chapter 5.
-```{r}
-tulip_dat <-
-  tulip_dat %>% mutate(bed = factor(bed))
-```
-
+8H1. Return to the data(tulips) example in the chapter. Now include the bed variable as a predictor in the interaction model. Don’t interact bed with the other predictors; just include it as a main effect. Note that bed is categorical. So to use it properly, you will need to either construct dummy variables, or rather an index variable, as explained in Chapter 5.
 ```{r}
 b8h1 <-
-  brm(data = tulip_dat,
+  brm(data = d,
       family = gaussian,
       blooms_std ~ 0 + bed + water_cent + light_cent + water_cent:light_cent,
       prior = c(prior(normal(0, .25), class = b),
                 prior(exponential(1), class = sigma)),
       iter = 4000, warmup = 2000, chains = 4, cores = 4,
       seed = 1234,
-      file = "fits/b8h1.rds"
-      )
-```
+      file = "fits/b8h1")
 
-```{r}
 summary(b8h1)
 ```
-
+8H2. Use WAIC to compare the model from 8H1 to a model that omits bed. What do you infer from this comparison? Can you reconcile the WAIC results with the posterior distribution of the bed coefficients?
 ```{r}
 b8m4 <- add_criterion(b8m4, criterion = "waic")
 b8h1 <- add_criterion(b8h1, criterion = "waic")
@@ -112,17 +108,19 @@ loo_compare(b8m4, b8h1, criterion = "waic") %>%
 8H3. Consider again the data(rugged) data on economic development and terrain ruggedness, examined in this chapter. One of the African countries in that example Seychelles, is far outside the cloud of other nations, being a rare country with both relatively high GDP and high ruggedness. Seychelles is also unusual, in that it is a group of islands far from the coast of mainland Africa, and its main economic activity is tourism.
 
 a. Focus on model m8.5 from the chapter. Use WAIC pointwise penalties and PSIS Pareto k values to measure relative influence of each country. By these criteria, is Seychelles influencing the results? Are there other nations that are relatively influential? If so, can you explain why?
-b. Now use robust regression, as described in the previous chapter. Modify m8.5 to se a Student-t distribution with ν = 2. Does this change the results in a substantial way? 
+
+b. Now use robust regression, as described in the previous chapter. Modify m8.5 to se a Student-t distribution with v = 2. Does this change the results in a substantial way?
+
 ```{r}
+rm(list = ls())
 data(rugged, package = "rethinking")
-rugged_dat <- rugged
+d <- rugged
 rm(rugged)
 ```
 
 ```{r}
-rugged_dat <-
-  rugged_dat %>% 
-  as_tibble() %>% 
+d <-
+  d %>% 
   select(country, rgdppc_2000, rugged, cont_africa) %>% 
   drop_na(rgdppc_2000) %>% 
   mutate(log_gdp = log(rgdppc_2000),
@@ -130,14 +128,12 @@ rugged_dat <-
          rugged_std = rugged / max(rugged),
          rugged_std_cent = rugged_std - mean(rugged_std),
          cid = factor(cont_africa, levels = c(1, 0),
-                      labels = c("African", "Not African"))
-         )
+                      labels = c("African", "Not African")))
 ```
-
 
 ```{r}
 b8h3 <-
-  brm(data = rugged_dat,
+  brm(data = d,
       family = gaussian,
       bf(log_gdp_std ~ 0 + a + b * rugged_std_cent,
          a ~ 0 + cid,
@@ -148,27 +144,21 @@ b8h3 <-
                 prior(normal(0, .3), class = b, coef = cidAfrican, nlpar = b),
                 prior(normal(0, .3), class = b, coef = cidNotAfrican, nlpar = b),
                 prior(exponential(1), class = sigma)),
-      iter = 4000, warmup = 2000, chains = 4, cores = 4,
-      seed = 1234,
-      file = "fits/b8h3.rds"
-      )
-```
+  iter = 4000, warmup = 2000, chains = 4, cores = 4,
+  seed = 1234,
+  file = "fits/b8h3")
 
-```{r}
 b8h3 <- add_criterion(b8h3, criterion = c("loo", "waic"))
-```
 
-```{r}
 summary(b8h3)
 ```
-
 ```{r}
 library(gghighlight)
 
 tibble(pareto_k = b8h3$criteria$loo$diagnostics$pareto_k,
        p_waic = b8h3$criteria$waic$pointwise[, "p_waic"]) %>% 
   rowid_to_column(var = "obs") %>% 
-  left_join(rugged_dat %>% 
+  left_join(d %>% 
               select(country) %>% 
               rowid_to_column(var = "obs"),
             by = "obs") %>% 
@@ -176,80 +166,89 @@ tibble(pareto_k = b8h3$criteria$loo$diagnostics$pareto_k,
   geom_vline(xintercept = .7, linetype = "dashed") +
   geom_hline(yintercept = .4, linetype = "dashed") +
   geom_point() +
-  gghighlight(pareto_k > .7 | p_waic > .4, n = 1, label_key = country,
+  gghighlight(pareto_k > .7 | p_waic > .4, n = 1,
+              label_key = country,
               label_params = list(size = 3)) +
   labs(x = "Pareto *k*", y = "p<sub>WAIC<sub>")
 ```
 
 ```{r}
 b8h3_t <-
-  brm(data = rugged_dat,
+  brm(data = d,
       family = student,
       bf(log_gdp_std ~ 0 + a + b * rugged_std_cent,
          a ~ 0 + cid,
          b ~ 0 + cid,
-         nu = 2,
          nl = TRUE),
       prior = c(prior(normal(1, .1), class = b, coef = cidAfrican, nlpar = a),
                 prior(normal(1, .1), class = b, coef = cidNotAfrican, nlpar = a),
-                prior(normal(0, .3), class = b, coef = cidAfrican, nlpar = b),
-                prior(normal(0, .3), class = b, coef = cidNotAfrican, nlpar = b),
-                prior(exponential(1), class = sigma)),
-      iter = 4000, warmup = 2000, chains = 4, cores = 4,
-      seed = 1234,
-      file = "fits/b8h3_t.rds"
-      )
-```
+                prior(normal(1, .1), class = b, coef = cidAfrican, nlpar = b),
+                prior(normal(1, .1), class = b, coef = cidNotAfrican, nlpar = b),
+                prior(exponential(1), sigma)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4, seed = 1234,
+  file = "fits/b8h3_t")
 
-```{r}
 b8h3_t <- add_criterion(b8h3_t, criterion = c("loo", "waic"))
 ```
 
 ```{r}
-library(ggtext)
-
-n_diff <- 
-  spread_draws(b8h3, b_b_cidAfrican, b_b_cidNotAfrican) %>% 
+n_diff <- spread_draws(b8h3, b_b_cidAfrican, b_b_cidNotAfrican) %>% 
   mutate(diff = b_b_cidAfrican - b_b_cidNotAfrican)
 
-t_diff <-
-  spread_draws(b8h3_t, b_b_cidAfrican, b_b_cidNotAfrican) %>% 
+t_diff <- spread_draws(b8h3_t, b_b_cidAfrican, b_b_cidNotAfrican) %>% 
   mutate(diff = b_b_cidAfrican - b_b_cidNotAfrican)
 
 ggplot() +
   geom_density(data = n_diff, aes(x = diff, fill = "Normal"),
-               color = NA, alpha = .6) +
+               color = NA, alpha = 0.6) +
   geom_density(data = t_diff, aes(x = diff, fill = "Student's *t*"),
-               color = NA, alpha = .6) +
+               color = NA, alpha = 0.6) +
   scale_fill_manual(values = c("#009FB7", "#FED766")) +
-  labs(x = "African - Non-African", y = "Density", fill = NULL) +
+  labs(x = "African &minus; Non-African", y = "Density", fill = NULL) +
   theme(legend.text = element_markdown())
 ```
+8H4. The values in data(nettle) are data on language diversity in 74 nations.1 The meaning of each column is given below.
 
-8H4
+1. country: Name of the country
+2. num.lang: Number of recognized languages spoken
+3. area: Area in square kilometers
+4. k.pop: Population, in thousands
+5. num.stations: Number of weather stations that provided data for the next two columns
+6. mean.growing.season: Average length of growing season, in months
+7. sd.growing.season: Standard deviation of length of growing season, in months
 
-a.
+Use these data to evaluate the hypothesis that language diversity is partly a product of food security. The notion is that, in productive ecologies, people don’t need large social networks to buffer them against risk of food shortfalls. The means cultural groups can be smaller and more self-sufficient, leading to more languages per capita. Use the number of languages per capita as the outcome: 
+
+d$lang.per.cap <- d$num.lang / d$k.pop
+
+Use the logarithm of this new variable as your regression outcome. (A count model would be better here, but you’ll learn those later, in Chapter 11.) This problem is open ended, allowing you to decide how you address the hypotheses and the uncertain advice the modeling provides. If you think you need to use WAIC anyplace, please do. If you think you need certain priors, argue for them. If you think you need to plot predictions in a certain way, please do. Just try to honestly evaluate the main effects of both mean.growing.season and sd.growing.season, as well as their two-way interaction. Here are three parts to help.
+
+a. Evaluate the hypothesis that language diversity, as measured by log(lang.per.cap), is positively associated with average length of the growing season, mean.growing.season. Consider log(area) in your regression(s) as a covariate (not an interaction). Interpret your results.
+
 ```{r}
+rm(list = ls())
 data(nettle, package = "rethinking")
+d <- nettle
+rm(nettle)
 ```
 
 ```{r}
-nettle_dat <-
-  nettle %>% 
+d <-
+  d %>% 
   mutate(lang_per_cap = num.lang / k.pop,
          log_lang_per_cap = log(lang_per_cap),
+         log_lang_per_cap_std = rethinking::standardize(log_lang_per_cap),
          log_area = log(area),
-         lang_per_cap_std = standardize(log_lang_per_cap),
-         area_std = standardize(log_area),
-         mean_growing_std = standardize(mean.growing.season),
-         sd_growing_std = standardize(sd.growing.season))
+         log_area_std = rethinking::standardize(log_area),
+         mean_growing_std = rethinking::standardize(mean.growing.season),
+         sd_growing_std = rethinking::standardize(sd.growing.season))
 ```
 
 ```{r}
 b8h4a_1 <-
-  brm(data = nettle_dat,
+  brm(data = d,
       family = gaussian,
-      lang_per_cap_std ~ 1 + mean_growing_std,
+      log_lang_per_cap_std ~ 1 + mean_growing_std,
       prior = c(prior(normal(0, .2), class = Intercept),
                 prior(normal(0, .5), class = b),
                 prior(exponential(1), class = sigma)),
@@ -258,10 +257,10 @@ b8h4a_1 <-
       file = "fits/b8h4a_1")
 
 b8h4a_2 <-
-  brm(data = nettle_dat,
+  brm(data = d,
       family = gaussian,
-      lang_per_cap_std ~ 1 + mean_growing_std + area_std,
-      prior = c(prior(normal(0, .2), class = Intercept),
+      log_lang_per_cap_std ~ 1 + mean_growing_std + log_area_std,
+      prior = c(prior(normal(0, 2), class = Intercept),
                 prior(normal(0, .5), class = b),
                 prior(exponential(1), class = sigma)),
       iter = 4000, warmup = 2000, chains = 4, cores = 4,
@@ -270,55 +269,42 @@ b8h4a_2 <-
 ```
 
 ```{r}
-b8h4a_1 <- add_criterion(b8h4a_1, criterion = c("loo", "waic"))
-b8h4a_2 <- add_criterion(b8h4a_2, criterion = c("loo", "waic"))
+b8h4a_1 <- add_criterion(b8h4a_1, criterion = "loo")
+b8h4a_2 <- add_criterion(b8h4a_2, criterion = "loo")
+
+loo_compare(b8h4a_1, b8h4a_2)
 ```
 
 ```{r}
-summary(b8h4a_1)
-```
-
-```{r}
-summary(b8h4a_2)
-```
-
-```{r}
-loo_compare(b8h4a_1, b8h4a_2, criterion = "loo") %>% 
-  print(simplify = FALSE)
-```
-
-Visualize the model with area and see the impact of area towards the relationship of mean growing season and language per capita
-```{r}
-new_nettle <- 
-  crossing(area_std = seq(-4, 4, by = 2),
+new_nettle <-
+  crossing(log_area_std = c(-4, -2, 0, 2, 4),
            mean_growing_std = seq(-4, 4, by = 1),
            sd_growing_std = seq(-4, 4, by = 1))
 
-to_string <- 
-  as_labeller(c(`-4` = "Area = -4", `-2` = "Area = -2",
+to_string <-
+  as_labeller(c(`-4` = "Area = -4",
+                `-2` = "Area = -2",
                 `0` = "Area = 0",
-                `-2` = "Area = -2", `4` = "Area = 4"))
+                `2` = "Area = 2",
+                `4` = "Area = 4"))
 
 new_nettle %>% 
   add_epred_draws(b8h4a_2, ndraws = 1000) %>% 
   mean_qi(.width = c(.67, .89, .97)) %>% 
-  ggplot(aes(x = mean_growing_std, y = .epred, ymin = .lower, ymax = .upper)) +
-  facet_wrap(~area_std, nrow = 1, labeller = to_string) +
-  geom_lineribbon(color = NA) +
-  # scale_fill_manual(
-  #   values = ramp_blue(seq(.9, .2, length.out = 3)),
-  #   breaks = c("0.67", "0.89", "0.97")) +
+  ggplot(aes(x = mean_growing_std, y = .epred,
+             ymin = .lower, ymax = .upper)) +
+  facet_wrap(~ log_area_std, nrow = 1, labeller = to_string) +
+  geom_lineribbon()
   labs(x = "Mean Growing Season (standardized)",
-       y = "Log Languages per Capita (standardized)",
-       fill = "Interval")
+       y = "Log L")
 ```
 
-b.
+v. Now evaluate the hypothesis that language diversity is negatively associated with the standard deviation of length of growing season, sd.growing.season. This hypothesis follows from uncertainty in harvest favoring social insurance through larger social networks and therefore fewer languages. Again, consider log(area) as a covariate (not an interaction). Interpret your results.
 ```{r}
 b8h4b_1 <-
-  brm(data = nettle_dat,
+  brm(data = d,
       family = gaussian,
-      lang_per_cap_std ~ 1 + sd_growing_std,
+      log_lang_per_cap_std ~ 1 + sd_growing_std,
       prior = c(prior(normal(0, .2), class = Intercept),
                 prior(normal(0, .5), class = b),
                 prior(exponential(1), class = sigma)),
@@ -328,9 +314,9 @@ b8h4b_1 <-
       )
 
 b8h4b_2 <-
-  brm(data = nettle_dat,
+  brm(data = d,
       family = gaussian,
-      lang_per_cap_std ~ 1 + sd_growing_std + area_std,
+      log_lang_per_cap_std ~ 1 + sd_growing_std + log_area_std,
       prior = c(prior(normal(0, .2), class = Intercept),
                 prior(normal(0, .5), class = b),
                 prior(exponential(1), class = sigma)),
@@ -338,27 +324,21 @@ b8h4b_2 <-
       seed = 1234,
       file = "fits/b8h4b_2"
       )
-```
 
-```{r}
 b8h4b_1 <- add_criterion(b8h4b_1, criterion = "loo")
 b8h4b_2 <- add_criterion(b8h4b_2, criterion = "loo")
-```
 
-
-```{r}
 loo_compare(b8h4b_1, b8h4b_2)
 ```
 
 ```{r}
 new_nettle %>% 
   add_epred_draws(b8h4b_2, ndraws = 1000) %>% 
-  mean_qi(.width = c(0.67, 0.89, 0.97)) %>% 
-  ggplot(aes(x = sd_growing_std, y = .epred, ymin = .lower, ymax = .upper)) +
-  facet_wrap(~area_std, nrow = 1, labeller = to_string) +
-  geom_lineribbon(color = NA) +
-  # scale_fill_manual(values = ramp_blue(seq(0.9, 0.2, length.out = 3)),
-  #                   breaks = c("0.67", "0.89", "0.97")) +
+  mean_qi(.width = c(.67, .89, .97)) %>% 
+  ggplot(aes(x = sd_growing_std, y = .epred, ymin = .lower,
+             ymax = .upper)) +
+  facet_wrap(~ log_area_std, nrow = 1, labeller = to_string) +
+  geom_lineribbon() +
   labs(x = "Standard Deviation of Growing Season (standardized)",
        y = "Log Languages per Capita (standardized)",
        fill = "Interval")
@@ -366,57 +346,57 @@ new_nettle %>%
 
 ```{r}
 b8h4c <-
-  brm(data = nettle_dat,
+  brm(data = d,
       family = gaussian,
-      lang_per_cap_std ~ 1 + mean_growing_std + sd_growing_std + mean_growing_std:sd_growing_std,
+      log_lang_per_cap_std ~ mean_growing_std * sd_growing_std,
       prior = c(prior(normal(0, .2), class = Intercept),
                 prior(normal(0, .5), class = b),
                 prior(exponential(1), class = sigma)),
       iter = 4000, warmup = 2000, chains = 4, cores = 4,
       seed = 1234,
       file = "fits/b8h4c")
-```
 
-```{r}
 summary(b8h4c)
 ```
 
 ```{r}
 library(patchwork)
 
-new_nettle <- crossing(mean_growing_std = seq(-2, 2, by = 0.5),
-                       sd_growing_std = seq(-2, 4, by = 0.5))
+new_nettle <-
+  crossing(mean_growing_std = seq(-2, 2, by = .5),
+           sd_growing_std = seq(-2, 4, by = .5))
 
-int_preds <- new_nettle %>% 
+int_preds <-
+  new_nettle %>% 
   add_epred_draws(b8h4c, ndraws = 1000) %>% 
-  mean_qi(.width = 0.97)
+  mean_qi(.width = .97)
 
 facet_levels <- seq(-2, 2, by = 2)
 sd_facets <- list_along(facet_levels)
-for (i in seq_along(sd_facets)) {
-  points <- nettle_dat %>% 
+
+for(i in seq_along(sd_facets)){
+  points <- d %>% 
     mutate(diff = sd_growing_std - facet_levels[i])
   
-  p <- int_preds %>% 
-    filter(sd_growing_std == facet_levels[i]) %>% 
-    ggplot(aes(x = mean_growing_std, y = .epred, ymin = .lower,
-               ymax = .upper)) +
+  p <-
+    int_preds %>% 
+    dplyr::filter(sd_growing_std == facet_levels[i]) %>% 
+    ggplot(aes(x = mean_growing_std, y = .epred, 
+               ymin = .lower, ymax = .upper)) +
     geom_lineribbon(fill = "#99D8E2", color = "black") +
     geom_point(data = points,
-               aes(x = mean_growing_std, y = lang_per_cap_std,
-                   alpha = -1 * abs(diff)), size = 0.5,
+               aes(x = mean_growing_std, y = log_lang_per_cap_std,
+                   alpha = 1 * abs(diff)), size = .5,
                inherit.aes = FALSE, show.legend = FALSE) +
     expand_limits(x = c(-2, 2), y = c(-2.5, 3.5)) +
     labs(x = "Mean growing season", y = "Languages",
          subtitle = glue("SD growing season = {facet_levels[i]}")) +
     theme(plot.subtitle = element_text(size = 10))
   
-  if (i == 2) {
-    p <- p +
-      theme(plot.margin = margin(0, 20, 0, 20))
-  } else {
-    p <- p +
-      theme(plot.margin = margin(0, 0, 0, 0))
+  if (i == 2){
+    p <- p + theme(plot.margin = margin(0, 20, 0, 20))
+  } else{
+    p <- p + theme(plot.margin = margin(0, 0, 0, 0))
   }
   
   sd_facets[[i]] <- p
@@ -424,16 +404,16 @@ for (i in seq_along(sd_facets)) {
 
 mean_facets <- list_along(facet_levels)
 for (i in seq_along(mean_facets)) {
-  points <- nettle_dat %>% 
+  points <- d %>% 
     mutate(diff = mean_growing_std - facet_levels[i])
   
   p <- int_preds %>% 
-    filter(mean_growing_std == facet_levels[i]) %>% 
+    dplyr::filter(mean_growing_std == facet_levels[i]) %>% 
     ggplot(aes(x = sd_growing_std, y = .epred, ymin = .lower,
                ymax = .upper)) +
     geom_lineribbon(fill = "#99D8E2", color = "black") +
     geom_point(data = points,
-               aes(x = sd_growing_std, y = lang_per_cap_std,
+               aes(x = sd_growing_std, y = log_lang_per_cap_std,
                    alpha = -1 * abs(diff)), size = 0.5,
                inherit.aes = FALSE, show.legend = FALSE) +
     expand_limits(x = c(-2, 2), y = c(-2.5, 3.5)) +
@@ -457,30 +437,26 @@ mean_patch <- (mean_facets[[1]] | mean_facets[[2]] | mean_facets[[3]])
 
 sd_patch / mean_patch
 ```
-
+8H5. Consider the data(Wines2012) data table. These data are expert ratings of 20 different French and American wines by 9 different French and American judges. Your goal is to model score, the subjective rating assigned by each judge to each wine. I recommend standardizing it. In this problem, consider only variation among judges and wines. Construct index variables of judge and wine and then use these index variables to construct a linear regression model. Justify your priors. You should end up with 9 judge parameters and 20 wine parameters. How do you interpret the variation among individual judges and individual wines? Do you notice any patterns, just by plotting the differences? Which judges gave the highest/lowest ratings? Which wines were rated worst/best on average?
 ```{r}
 rm(list = ls())
 data(Wines2012, package = "rethinking")
-wine <- Wines2012
-rm(Wines2012)
-```
 
-```{r}
-wine <-
-  wine %>% 
+wine <- Wines2012 %>% 
+  as_tibble() %>% 
   mutate(score_std = rethinking::standardize(score),
          judge_ind = factor(as.integer(judge)),
          wine_ind = factor(as.integer(wine)),
          red = factor(flight, levels = c("white", "red")),
-         judge_amer = factor(judge.amer),
-         wine_amer = factor(wine.amer))
+         wine_amer = factor(wine.amer),
+         judge_amer = factor(judge.amer))
 ```
 
 ```{r}
 b8h5 <-
   brm(data = wine,
       family = gaussian,
-      bf(score_std ~ 0 + j + w,
+      bf(score_std ~ j + w,
          j ~ 0 + judge_ind,
          w ~ 0 + wine_ind,
          nl = TRUE),
@@ -490,101 +466,107 @@ b8h5 <-
       iter = 4000, warmup = 2000, chains = 4, cores = 4,
       seed = 1234,
       file = "fits/b8h5")
-```
 
-```{r}
-draws <- as_draws_df(b8h5) %>%
-  as_tibble() %>%
-  select(-sigma, -lp__) %>%
-  pivot_longer(-c(.chain, .iteration, .draw), names_to = c(NA, NA, "type", "num"), names_sep = "_",
-               values_to = "value", ) %>%
+draws <-
+  as_draws_df(b8h5) %>% 
+  as_tibble() %>% 
+  select(-sigma, -lp__) %>% 
+  pivot_longer(-c(.chain, .iteration, .draw),
+               names_to = c(NA, NA, "type", "num"),
+               names_sep = "_", values_to = "value", ) %>% 
   mutate(num = str_replace_all(num, "ind", ""),
          num = as.integer(num))
 ```
-
 ```{r}
 draws %>% 
-  filter(type == "judge") %>% 
+  dplyr::filter(type == "judge") %>% 
   mutate(num = factor(num)) %>% 
-  left_join(wine %>% 
-              distinct(judge, judge_ind),
+  left_join(wine %>% distinct(judge, judge_ind),
             by = c("num" = "judge_ind")) %>% 
   select(judge, value) %>% 
   group_by(judge) %>% 
   median_hdci(.width = c(.67, .89, .97)) %>% 
-  ggplot(aes(y = fct_rev(judge), x = value, xmin = .lower, xmax = .upper)) +
+  ggplot(aes(y = fct_rev(judge), x = value,
+             xmin = .lower, xmax = .upper)) +
   geom_interval() +
+  scale_color_manual(values = c("navyblue", "skyblue", "lightblue"),
+                     limits = as.character(c(0.67, 0.89, 0.97))) +
   labs(y = NULL, x = "Parameter Value", color = "Interval")
 ```
 
 ```{r}
 draws %>% 
-  filter(type == "wine") %>% 
+  dplyr::filter(type == "wine") %>% 
   mutate(num = factor(num)) %>% 
-  left_join(wine %>% 
-              distinct(wine, wine_ind),
+  left_join(wine %>% distinct(wine, wine_ind),
             by = c("num" = "wine_ind")) %>% 
   select(wine, value) %>% 
   group_by(wine) %>% 
   median_hdci(.width = c(.67, .89, .97)) %>% 
-  ggplot(aes(y = fct_rev(wine), x = value, xmin = .lower, xmax = .upper)) +
+  ggplot(aes(y = fct_rev(wine), x = value,
+             xmin = .lower, xmax = .upper)) +
   geom_interval() +
+  scale_color_manual(values = c("navyblue", "skyblue", "lightblue"),
+                     limits = as.character(c(.67, .89, .97))) +
   labs(y = NULL, x = "Parameter Value", color = "Interval")
 ```
+8H6. Now consider three features of the wines and judges:
 
-8H6
+1. flight: Whether the wine is red or white.
+2. wine.amer: Indicator variable for American wines.
+3. judge.amer: Indicator variable for American judges.
+
+Use indicator or index variables to model the influence of these features on the scores. Omit the individual judge and wine index variables from Problem 1. Do not include interaction effects yet. Again justify your priors What do you conclude about the differences among the wines and judges? Try to relate the results to the inferences in the previous problem.
 ```{r}
 b8h6 <-
   brm(data = wine,
       family = gaussian,
-      score_std ~ red + wine_amer + judge_amer,
-      prior = c(prior(normal(0, .2), class = Intercept),
-                prior(normal(0, .5), class = b),
+      bf(score_std ~ 0 + r +  w + j,
+         r ~ 0 + red,
+         w ~ 0 + wine_amer,
+         j ~ 0 + judge_amer,
+         nl = TRUE),
+      prior = c(prior(normal(0, .5), nlpar = r),
+                prior(normal(0, .5), nlpar = w),
+                prior(normal(0, .5), nlpar = j),
                 prior(exponential(1), class = sigma)),
       iter = 4000, warmup = 2000, chains = 4, cores = 4,
       seed = 1234,
       file = "fits/b8h6")
+
+summary(b8h6)
 ```
 
-```{r}
-fixef(b8h6)
-```
-
+8H7. Now consider two-way interactions among the three features. You should end up with three different interaction terms in your model. These will be easier to build, if you use indicator variables. Again justify your priors. Explain what each interaction means. Be sure to interpret the model’s predictions on the outcome scale (mu, the expected score), not on the scale of individual parameters. You can use link to help with this, or just use your knowledge of the linear model instead. What do you conclude about the features and the scores? Can you relate the results of your model(s) to the individual judge and wine inferences from 8H5?
 ```{r}
 b8h7 <-
-  brm(score_std ~ wine_amer + judge_amer + red +
-        wine_amer:judge_amer + wine_amer:red + judge_amer:red,
+  brm(score_std ~ wine_amer + judge_amer + red + wine_amer:judge_amer + wine_amer:red + judge_amer:red,
       data = wine,
       family = gaussian,
       prior = c(prior(normal(0, .2), class = Intercept),
                 prior(normal(0, .5), class = b),
-                prior(normal(0, .25), class = b,
-                      coef = judge_amer1:redred),
-                prior(normal(0, .25), class = b,
-                      coef = wine_amer1:judge_amer1),
-                prior(normal(0, .25), class = b,
-                      coef = wine_amer1:redred),
+                prior(normal(0, .25), class = b, coef = judge_amer1:redred),
+                prior(normal(0, .25), class = b, coef = wine_amer1:judge_amer1),
+                prior(normal(0, .25), class = b, coef = wine_amer1:redred),
                 prior(exponential(1), class = sigma)),
       iter = 4000, warmup = 2000, chains = 4, cores = 4,
       seed = 1234,
       file = "fits/b8h7")
+
+summary(b8h7)
 ```
 
-```{r}
-fixef(b8h7) %>% round(digits = 4)
-```
-
+To interpret what all these parameters mean, we can visualize the predicted score for each combination of judge, wine location, and wine type. In this figure we see that all combinations of of judge and wine for white wines. However, there do appear to be some slight differences in the red wines. In general, French judges really don’t like the American reds, and American judges really do like the French reds.
 ```{r}
 wine %>% 
   distinct(wine_amer, judge_amer, red) %>% 
   mutate(combo = glue("{ifelse(judge_amer == 0, 'French', 'American')} judge, ",
-                      "{ifelse(wine_amer == 0, 'French', 'American')} wine")) %>%
+                      "{ifelse(wine_amer == 0, 'French', 'American')} wine")) %>% 
   add_epred_draws(b8h7) %>% 
   median_hdi(.width = c(.67, .89, .97)) %>% 
   ggplot(aes(x = .epred, xmin = .lower, xmax = .upper, y = combo)) +
   facet_wrap(~red, nrow = 1, labeller = as_labeller(str_to_title)) +
   geom_interval() +
   labs(x = "Value", y = NULL, color = "Interval")
-           
 ```
 

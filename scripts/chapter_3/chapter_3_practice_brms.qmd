@@ -361,9 +361,32 @@ ggplot() +
   labs(x = "Proportion Water (p)", y = "Simulations")
 ```
 
+Now we create the simulation of 20 tosses using biased output
 ```{r}
 set.seed(123)
 biased_dat <- biased_globe(tosses = 20)
 biased_dat
 ```
 
+Now we estimate the unbiased posterior. We can accomplish this using the biased sampling rate of .8. that is, each true water observation has an 80% chance of actually being recorded as a water observation.
+```{r}
+library(geomtextpath)
+
+posterior <- 
+  tibble(p_grid = seq(0, 1, length.out = 1000)) %>% 
+  mutate(prior = dbeta(p_grid, shape1 = 1, shape2 = 1),
+         bias_likelihood = dbinom(biased_dat, size = 20, prob = p_grid),
+         crtd_likelihood = dbinom(biased_dat, size = 20, prob = p_grid * 0.8),
+         bias_posterior = bias_likelihood * prior / sum(bias_likelihood * prior),
+         crtd_posterior = crtd_likelihood * prior / sum(crtd_likelihood * prior))
+
+ggplot(posterior, aes(x = p_grid)) +
+  geom_textline(aes(y = bias_posterior), linetype = "dashed",
+                color = "grey70", size = 6, linewidth = 1,
+                label = "Biased", hjust = .45) +
+  geom_textline(aes(y = crtd_posterior), linetype = "solid",
+                color = "#009FB7", size = 6, linewidth = 1,
+                label = "Corrected", hjust = .4) +
+  scale_x_continuous(breaks = seq(0, 1, .1)) +
+  labs(x = "Proportion Water (p)", y = "Posterior Density")
+```

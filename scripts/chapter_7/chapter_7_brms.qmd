@@ -9,16 +9,22 @@ format: html
 library(tidyverse)
 
 (
-  d <-
-    tibble(species = c("afarensis", "africanus", "habilis", "boisei", "rudolfensis", "ergaster", "sapiens"),
-           brain   = c(438, 452, 612, 521, 752, 871, 1350), 
-           mass    = c(37.0, 35.5, 34.5, 41.5, 55.5, 61.0, 53.5))
+  d <- 
+  tibble(species = c("afarensis", "africanus", "habilis", "boisei", "rudolfensis", "ergaster", "sapiens"), 
+         brain   = c(438, 452, 612, 521, 752, 871, 1350), 
+         mass    = c(37.0, 35.5, 34.5, 41.5, 55.5, 61.0, 53.5))
 )
 ```
 
 ```{r}
 library(rcartocolor)
+```
+
+```{r}
 carto_pal(7, "BurgYl")
+```
+
+```{r}
 display_carto_pal(7, "BurgYl")
 ```
 
@@ -34,7 +40,8 @@ theme_set(
 d %>% 
   ggplot(aes(x = mass, y = brain, label = species)) +
   geom_point(color = carto_pal(7, "BurgYl")[5]) +
-  geom_text_repel(size = 3, color = carto_pal(7, "BurgYl")[7], family = "Courier", seed = 438) +
+  geom_text_repel(size = 3, color = carto_pal(7, "BurgYl")[7],
+                  family = "Courier", seed = 438) +
   labs(subtitle = "Average brain volume by body\nmass for six hominin species",
        x = "body mass (kg)",
        y = "brain volume (cc)") +
@@ -50,7 +57,9 @@ d <-
 
 ```{r}
 library(brms)
+```
 
+```{r}
 b7.1 <-
   brm(data = d,
       family = gaussian,
@@ -69,8 +78,10 @@ print(b7.1)
 
 ```{r}
 R2_is_bad <- function(brm_fit, seed = 7, ...){
+  
   set.seed(seed)
   p <- predict(brm_fit, summary = F, ...)
+  # in my experience, it's more typical to define residuals as the criterion minus the predictions
   r <- d$brain_std - apply(p, 2, mean)
   1 - rethinking::var2(r) / rethinking::var2(d$brain_std)
 }
@@ -80,33 +91,33 @@ R2_is_bad <- function(brm_fit, seed = 7, ...){
 R2_is_bad(b7.1)
 ```
 
-Now fit the quadratic through the fifth-order polynomial models using update()
 ```{r}
 # quadratic
-b7.2 <- 
+b7.2 <-
   update(b7.1,
-         newdata = d, 
+         newdata = d,
          formula = brain_std ~ 1 + mass_std + I(mass_std^2),
          iter = 2000, warmup = 1000, chains = 4, cores = 4,
          seed = 7,
          file = "fits/b07.02")
 
 # cubic
-b7.3 <- 
+b7.3 <-
   update(b7.1,
-         newdata = d, 
-         formula = brain_std ~ 1 + mass_std + I(mass_std^2) + I(mass_std^3),
+         newdata = d,
+         formula = brain_std ~ 1 + mass_std + I(mass_std^2) +
+           I(mass_std^3),
          iter = 2000, warmup = 1000, chains = 4, cores = 4,
          seed = 7,
          control = list(adapt_delta = .9),
          file = "fits/b07.03")
 
-
 # fourth-order
-b7.4 <- 
+b7.4 <-
   update(b7.1,
-         newdata = d, 
-         formula = brain_std ~ 1 + mass_std + I(mass_std^2) + I(mass_std^3) + I(mass_std^4),
+         newdata = d,
+         formula = brain_std ~ 1 + mass_std + I(mass_std^2) +
+           I(mass_std^3) + I(mass_std^4),
          iter = 2000, warmup = 1000, chains = 4, cores = 4,
          seed = 7,
          control = list(adapt_delta = .995),
@@ -180,20 +191,19 @@ library(tidybayes)
 
 nd <- tibble(mass_std = seq(from = -2, to = 2, length.out = 100))
 
-fitted(b7.1, 
-       newdata = nd, 
-       probs = c(.055, .945)) %>% 
-  data.frame() %>% 
-  bind_cols(nd) %>% 
+nd %>% 
+  add_epred_draws(b7.1) %>% 
+  mean_qi(.epred, .width = .89) %>% 
   
-  ggplot(aes(x = mass_std, y = Estimate)) +
-  geom_lineribbon(aes(ymin = Q5.5, ymax = Q94.5),
-                  color = carto_pal(7, "BurgYl")[7], linewidth = 1/2, 
-                  fill = alpha(carto_pal(7, "BurgYl")[6], 1/3)) +
+  ggplot(aes(x = mass_std, y = .epred)) +
+  geom_lineribbon(aes(ymin = .lower, ymax = .upper),
+              color = carto_pal(7, "BurgYl")[7],
+              linewidth = 1/2, 
+              fill = alpha(carto_pal(7, "BurgYl")[6], 1/3)) +
   geom_point(data = d,
-             aes(y = brain_std),
-             color = carto_pal(7, "BurgYl")[7]) +
-  labs(subtitle = bquote(italic(R)^2==.(round(R2_is_bad(b7.1), digits = 2))),
+              aes(y = brain_std),
+              color = carto_pal(7, "BurgYl")[7]) +
+  labs(subtitle = bquote(italic(R)^2 == .(round(R2_is_bad(b7.1), digits = 2))),
        x = "body mass (standardized)",
        y = "brain volume (standardized)") +
   coord_cartesian(xlim = range(d$mass_std))
@@ -201,21 +211,22 @@ fitted(b7.1,
 
 ```{r}
 make_figure7.3 <- function(brms_fit, ylim = range(d$brain_std)){
+  
   # compute the R2
   r2 <- R2_is_bad(brms_fit)
-  
+
   # define the new data
   nd <- tibble(mass_std = seq(from = -2, to = 2, length.out = 200))
   
   # simulate and wrangle
-  fitted(brms_fit, newdata = nd, probs = c(.055, .945)) %>% 
-    data.frame() %>% 
-    bind_cols(nd) %>% 
+  add_epred_draws(nd, brms_fit) %>% 
+    mean_qi(.epred, .width = .89) %>% 
     
     # plot!
     ggplot(aes(x = mass_std)) +
-    geom_lineribbon(aes(y = Estimate, ymin = Q5.5, ymax = Q94.5),
-                    color = carto_pal(7, "BurgYl")[7], linewidth = 1/2,
+    geom_lineribbon(aes(y = .epred, ymin = .lower, ymax = .upper),
+                    color = carto_pal(7, "BurgYl")[7],
+                    linewidth = 1/2, 
                     fill = alpha(carto_pal(7, "BurgYl")[6], 1/3)) +
     geom_point(data = d,
                aes(y = brain_std),
@@ -225,6 +236,7 @@ make_figure7.3 <- function(brms_fit, ylim = range(d$brain_std)){
          y = "brain volume (std)") +
     coord_cartesian(xlim = c(-1.2, 1.5),
                     ylim = ylim)
+  
 }
 ```
 
@@ -235,17 +247,17 @@ p3 <- make_figure7.3(b7.3)
 p4 <- make_figure7.3(b7.4, ylim = c(.25, 1.1))
 p5 <- make_figure7.3(b7.5, ylim = c(.1, 1.4))
 p6 <- make_figure7.3(b7.6, ylim = c(-0.25, 1.5)) +
-  geom_hline(yintercept = 0, color = carto_pal(7, "BurgYl")[2], linetype = 2)
+  geom_hline(yintercept = 0, color = carto_pal(7, "BurgYl")[2], linetype = 2) 
 ```
 
 ```{r}
 library(patchwork)
 
 ((p1 | p2) / (p3 | p4) / (p5 | p6)) +
-  plot_annotation(title = "Figure7.3 Polynomial linear models of increasing\ndegree for the hominin data.")
+  plot_annotation(title = "Figure7.3. Polynomial linear models of increasing\ndegree for the hominin data.")
 ```
 
-### 7.1.2 Too few parameters hurts, too
+### 7.1.2 Too few parameters hurts, too.
 ```{r}
 d %>% 
   mutate(row = 1:n()) %>% 
@@ -253,8 +265,8 @@ d %>%
 ```
 
 ```{r}
-# library(rethinking)
-# brain_loo_plot
+library(rethinking)
+brain_loo_plot
 ```
 
 ```{r}
@@ -269,14 +281,13 @@ print(b7.1.1)
 ```
 
 ```{r}
-fitted(b7.1.1,
-       newdata = nd) %>% 
-  data.frame() %>% 
-  bind_cols(nd) %>% 
+nd %>% 
+  add_epred_draws(b7.1.1) %>% 
+  mean_qi(.epred, .width = .89) %>% 
   
-  ggplot(aes(x = mass_std)) +
-  geom_line(aes(y = Estimate),
-            color = carto_pal(7, "BurgYl")[7], linewidth = 1/2, alpha = 1/2) +
+  ggplot(aes(x = mass_std, y = .epred)) +
+  geom_line(color = carto_pal(7, "BurgYl")[7], 
+            linewidth = 1/2, alpha = 1/2) +
   geom_point(data = d,
              aes(y = brain_std),
              color = carto_pal(7, "BurgYl")[7]) +
@@ -300,11 +311,11 @@ brain_loo_lines <- function(brms_fit, row, ...){
            ...)
   
   # pull the lines values
-  fitted(new_fit,
-         newdata = nd) %>% 
-    data.frame() %>% 
-    select(Estimate) %>% 
-    bind_cols(nd)
+  add_epred_draws(nd, new_fit) %>% 
+    mean_qi(.epred) %>% 
+    select(.epred) %>% 
+    bind_cols(nd) %>% 
+    rename(Estimate = .epred)
 }
 ```
 
@@ -330,7 +341,7 @@ b7.4_fits <-
 ```{r}
 # left
 p1 <-
-  b7.1_fits %>%  
+  b7.1_fits %>% 
   
   ggplot(aes(x = mass_std)) +
   geom_line(aes(y = Estimate, group = row),
@@ -365,12 +376,12 @@ p1 + p2
 ```
 
 ## 7.2 Entropy and accuracy
-### 7.2.1 Firing the weatherperson
+### 7.2.1 Firing the weatherperson.
 ```{r}
 weatherperson <-
   tibble(day = 1:10,
          prediction = rep(c(1, .6), times = c(3, 7)),
-        observed = rep(1:0, times = c(3, 7)))
+         observed = rep(1:0, times = c(3, 7)))
 
 weatherperson %>% 
   pivot_longer(-day) %>% 
@@ -388,12 +399,12 @@ weatherperson %>%
 
 ```{r}
 newcomer <-
-  tibble(day = 1:10,
+  tibble(day        = 1:10,
          prediction = 0,
-         observed = rep(1:0, times = c(3, 7)))
+         observed   = rep(1:0, times = c(3, 7)))
 
 newcomer %>% 
-  pivot_longer(-day) %>% 
+  pivot_longer(-day) %>%
   
   ggplot(aes(x = day, y = name, fill = value)) +
   geom_tile(color = "white") +
@@ -409,30 +420,32 @@ newcomer %>%
 ```{r}
 weatherperson %>% 
   bind_rows(newcomer) %>% 
-  mutate(person = rep(c("weatherperson", "newcomer"), each = n()/2),
-         hit = ifelse(prediction == observed, 1, 1 - prediction - observed)) %>% 
+  mutate(person = rep(c("weatherperson", "newcomer"),
+                      each = n()/2),
+         hit = ifelse(prediction == observed, 1, 
+                      1 - prediction - observed)) %>% 
   group_by(person) %>% 
-  summarize(hit_rate = mean(hit))
+  summarise(hit_rate = mean(hit))
 ```
 
-#### 7.2.1.1 Costs and benefits
+#### 7.2.1.1 Costs and benefits.
 ```{r}
-bind_rows(weatherperson,
-          newcomer) %>% 
-  mutate(person = rep(c("weatherperson", "newcomer"), each = n()/2),
-         points = ifelse(observed == 1 & prediction != 1, -5,
-                         ifelse(observed == 1 & prediction == 1, -1,
-                                -1 * prediction))) %>% 
+bind_rows(weatherperson, newcomer) %>% 
+  mutate(person = rep(c("weatherperson", "newcomer"),
+                      each = n()/2),
+         points = ifelse(observed == 1 & prediction != 1,
+                         -5, ifelse(observed == 1 & prediction == 1, -1, -1 * prediction))) %>% 
   group_by(person) %>% 
   summarise(happiness = sum(points))
 ```
 
-#### 7.2.1.2 Measuring accuracy
+#### 7.2.1.2 Measuring accuracy.
 ```{r}
-bind_rows(weatherperson,
-          newcomer) %>% 
-  mutate(person = rep(c("weatherperson", "newcomer"), each = n()/2),
-         hit = ifelse(prediction == observed, 1, 1 - prediction - observed)) %>% 
+bind_rows(weatherperson, newcomer) %>% 
+  mutate(person = rep(c("weatherperson", "newcomer"),
+                      each = n() / 2),
+         hit = ifelse(prediction == observed, 1, 
+                      1 - prediction - observed)) %>% 
   count(person, hit) %>% 
   mutate(power = hit ^ n,
          term = rep(letters[1:2], times = 2)) %>% 
@@ -442,34 +455,21 @@ bind_rows(weatherperson,
   mutate(probability_correct_sequence = a * b)
 ```
 
-### 7.2.2 Information and uncertainty
-Formula for information entropy
-$$
-H(p) = -E log(p_{i}) = - \sum_{i=1}^{n} p_{i} log(p_{i})
-$$
-
+### 7.2.2 Information and uncertainty.
 ```{r}
 tibble(place = c("McElreath's house", "Abu Dhabi"),
        p_rain = c(.3, .01)) %>% 
   mutate(p_shine = 1 - p_rain) %>% 
   group_by(place) %>% 
-  mutate(h_p = (p_rain * log(p_rain) + p_shine * log(p_shine)) %>% mean() * -1)
+  mutate(h_p = (p_rain * log(p_rain) + p_shine * log(p_shine)) %>% mean() * -1) %>% 
+  mutate_if(is.double, round, digits = 3)
 ```
-
 ```{r}
 p <- c(.7, .15, .15)
 -sum(p * log(p))
 ```
 
-### 7.2.3 From entropy to accuracy
-Divergence: The additional uncertainty induced by using probabilities from one distribution to describe another distribution.
-
-The formula for the KL divergence is
-$$
-D_{KL}(p, q) = \sum_{i}p_[i](log(p_{i}) - log(q_{i}) = \sum_{i}p_{i}log(\frac{p_{i}}{q_{i}}),
-$$
-which is what McElreath described in plainer language as "the average difference in log probability between the target (p) and model (q)"
-
+### 7.2.3 From entropy to accuracy.
 ```{r}
 tibble(p_1 = .3,
        p_2 = .7,
@@ -483,15 +483,15 @@ tibble(p_1 = .3) %>%
   mutate(p_2 = 1 - p_1,
          q_1 = p_1) %>% 
   mutate(q_2 = 1 - q_1) %>% 
-  mutate(d_kl = (p_1 * log(p_1 / q_1)) + (p_2 * log(p_2 / q_2)))
+  mutate(d_kl = (p_1 * log(p_1 / q_1) + (p_2 * log(p_2 / q_2))))
 ```
 
 ```{r}
-t <- 
+t <-
   tibble(p_1 = .3,
          p_2 = .7,
          q_1 = seq(from = .01, to = .99, by = .01)) %>% 
-  mutate(q_2 = 1 - q_1) %>%
+  mutate(q_2 = 1 - q_1) %>% 
   mutate(d_kl = (p_1 * log(p_1 / q_1)) + (p_2 * log(p_2 / q_2)))
 
 head(t)
@@ -504,22 +504,21 @@ t %>%
   geom_line(color = carto_pal(7, "BurgYl")[7], linewidth = 1.5) +
   annotate(geom = "text", x = .4, y = 1.5, label = "q = p",
            color = carto_pal(7, "BurgYl")[5], family = "Courier", size = 3.5) +
-  labs(x = "q[1]",
-       y = "Divergence of q from p")
+  labs(x = "q[1]", y = "Divergence of q from p")
 ```
 
-#### 7.2.3.1 Rethinking: Divergence depends upon direction
+#### 7.2.3.1 Rethinking: Divergence depends upon direction.
 ```{r}
 tibble(direction = c("Earth to Mars", "Mars to Earth"),
        p_1 = c(.01, .7),
        q_1 = c(.7, .01)) %>% 
   mutate(p_2 = 1 - p_1,
          q_2 = 1 - q_1) %>% 
-  mutate(d_kl = (p_1 * log(p_1 / q_1)) + (p_2 * log(p_2 / q_2)))
+  mutate(d_kl = (p_1 * log(p_1 / q_1)) +
+           (p_2 * log(p_2 / q_2)))
 ```
 
-### 7.2.4 Estimating divergence
-Deviance from the OLS version of model m7.1
+### 7.2.4 Estimating divergence.
 ```{r}
 lm(data = d, brain_std ~ mass_std) %>% 
   logLik() * -2
@@ -537,7 +536,6 @@ log_lik(b7.1) %>%
   summarise(log_probability_score = mean(prob) %>% log())
 ```
 
-“If you sum these values, you’ll have the total log-probability score for the model and data” (p. 210). Here we sum those $log(q_{i})$ values up to compute $S(q)$.
 ```{r}
 log_lik(b7.1) %>% 
   data.frame() %>% 
@@ -550,7 +548,7 @@ log_lik(b7.1) %>%
   summarise(log_probability_score = mean(prob) %>% log()) %>% 
   summarise(total_log_probability_score = sum(log_probability_score))
 ```
-#### 7.2.4.1 Overthinking: Computing the lppd
+#### 7.2.4.1 Overthinking: Computing the lppd.
 ```{r}
 log_prob <- log_lik(b7.1)
 
@@ -576,7 +574,6 @@ prob <-
 prob
 ```
 
-Now for each case, we take the average of each of the probability scores, and then take the log of that
 ```{r}
 prob <-
   prob %>% 
@@ -586,13 +583,7 @@ prob <-
 prob
 ```
 
-For our last step, we sum those values up
-```{r}
-prob %>% 
-  summarise(total_log_probability_score = sum(log_probability_score))
-```
-
-### 7.2.5 Scoring the right data
+### 7.2.5 Scoring the right data.
 ```{r}
 my_lppd <- function(brms_fit){
   log_lik(brms_fit) %>% 
@@ -601,25 +592,94 @@ my_lppd <- function(brms_fit){
                  values_to = "logprob") %>% 
     mutate(prob = exp(logprob)) %>% 
     group_by(name) %>% 
-    summarise(log_probability_score = mean(prob) %>% log()) %>%
+    summarise(log_probability_score = mean(prob) %>% log()) %>% 
     summarise(total_log_probability_score = sum(log_probability_score))
 }
 ```
 
-Here's a tidyverse-style approach for computing the lppd for each of our six brms models.
 ```{r}
 tibble(name = str_c("b7.", 1:6)) %>% 
   mutate(brms_fit = purrr::map(name, get)) %>% 
   mutate(lppd = purrr::map(brms_fit, ~ my_lppd(.))) %>% 
   unnest(lppd)
 ```
+#### 7.2.5.1 Overthinking: Simulated training and testing.
+```{r}
+sim_train_test
+```
+```{r}
+# I've reduced this number by one order of magnitude to reduce computation time
+n_sim <- 10
+n_cores <- 8
+kseq <- 1:5
+
+# define the simulation function
+my_sim <- function(k){
+  
+  print(k);
+  r <- mcreplicate(n_sim, sim_train_test(N = n, k = k),
+                   mc.cores = n_cores);
+  c(mean(r[1, ]), mean(r[2, ]), sd(r[1, ]), sd(r[2, ]))
+}
+
+# here's our dev object based on N <- 20
+n <- 20
+dev_20 <-
+  sapply(kseq, my_sim)
+
+# here's our dev object based on N <- 100
+n <- 100
+dev_100 <- sapply(kseq, my_sim)
+```
+
+```{r}
+dev_tibble <-
+  rbind(dev_20, dev_100) %>% 
+  data.frame() %>% 
+  mutate(statistic = rep(c("mean", "sd"), each = 2) %>% rep(., times = 2),
+         sample    = rep(c("in", "out"), times = 2) %>% rep(., times = 2),
+         n         = rep(c("n = 20", "n = 100"), each = 4)) %>% 
+  pivot_longer(-(statistic:n)) %>% 
+  pivot_wider(names_from = statistic, values_from = value) %>%
+  mutate(n     = factor(n, levels = c("n = 20", "n = 100")),
+         n_par = str_extract(name, "\\d+") %>% as.double()) %>% 
+  mutate(n_par = ifelse(sample == "in", n_par - .075, n_par + .075))
+
+head(dev_tibble)
+```
+
+```{r}
+# for the annotation
+text <-
+  dev_tibble %>% 
+  filter(n_par > 1.5, 
+         n_par < 2.5) %>% 
+  mutate(n_par = ifelse(sample == "in", n_par - 0.2, n_par + 0.29))
+  
+# plot!
+dev_tibble %>% 
+  ggplot(aes(x = n_par, y = mean,
+             ymin = mean - sd, ymax = mean + sd,
+             group = sample, color = sample, fill  = sample)) +
+  geom_pointrange(shape = 21) +
+  geom_text(data = text,
+            aes(label = sample)) +
+  scale_fill_manual(values  = carto_pal(7, "BurgYl")[c(5, 7)]) +
+  scale_color_manual(values = carto_pal(7, "BurgYl")[c(7, 5)]) +
+  labs(title = "Figure 7.6. Deviance in and out of sample.",
+       x = "number of parameters",
+       y = "deviance") +
+  theme(legend.position = "none",
+        strip.background = element_rect(fill = alpha(carto_pal(7, "BurgYl")[1], 1/4), color = "transparent")) +
+  facet_wrap(~ n, scale = "free_y")
+```
 
 ## 7.3 Golem taming: regularization
 ```{r}
-tibble(x = seq(from = -3.5, to = 3.5, by = .01)) %>% 
-  mutate(a = dnorm(x, mean = 0, sd = .2),
-         b = dnorm(x, mean = 0, sd = .5),
-         c = dnorm(x, mean = 0, sd = 1)) %>% 
+tibble(x = seq(from = - 3.5, to = 3.5, by = 0.01)) %>%
+  mutate(a = dnorm(x, mean = 0, sd = 0.2),
+         b = dnorm(x, mean = 0, sd = 0.5),
+         c = dnorm(x, mean = 0, sd = 1.0)) %>% 
   pivot_longer(-x) %>% 
   
   ggplot(aes(x = x, y = value,
@@ -633,15 +693,66 @@ tibble(x = seq(from = -3.5, to = 3.5, by = .01)) %>%
   theme(legend.position = "none")
 ```
 
+```{r}
+library(rethinking)
+
+# I've reduced this number by one order of magnitude to reduce computation time
+n_sim   <- 10
+n_cores <- 8
+
+make_sim <- function(n, b_sigma) {
+  sapply(kseq, function(k) {
+    print(k);
+    r <- mcreplicate(n_sim, sim_train_test(N = n, k = k, b_sigma = b_sigma),  # this is an augmented line of code
+                     mc.cores = n_cores);
+    c(mean(r[1, ]), mean(r[2, ]), sd(r[1, ]), sd(r[2, ])) 
+    }
+    ) %>% 
+    
+    # this is a new line of code
+    data.frame()
+}
+
+s <-
+  crossing(n       = c(20, 100),
+           b_sigma = c(1, 0.5, 0.2)) %>% 
+  mutate(sim = map2(n, b_sigma, make_sim)) %>% 
+  unnest(sim)
+```
+
+```{r}
+# wrangle the simulation data
+s %>% 
+  mutate(statistic = rep(c("mean", "sd"), each = 2) %>% rep(., times = 3 * 2),
+         sample    = rep(c("in", "out"), times = 2) %>% rep(., times = 3 * 2)) %>% 
+  pivot_longer(-c(n:b_sigma, statistic:sample)) %>% 
+  pivot_wider(names_from = statistic, values_from = value) %>%
+  mutate(n     = str_c("n = ", n) %>% factor(., levels = c("n = 20", "n = 100")),
+         n_par = str_extract(name, "\\d+") %>% as.double()) %>% 
+  
+  # plot
+  ggplot(aes(x = n_par, y = mean,
+             group = interaction(sample, b_sigma))) +
+  geom_line(aes(color = sample, size = b_sigma %>% as.character())) +
+  # this function contains the data from the previous simulation
+  geom_point(data = dev_tibble, 
+             aes(group = sample, fill = sample),
+             color = "black", shape = 21, size = 2.5, stroke = .1) +
+  scale_size_manual(values = c(1, 0.5, 0.2)) +
+  scale_fill_manual(values = carto_pal(7, "BurgYl")[c(7, 5)]) +
+  scale_color_manual(values = carto_pal(7, "BurgYl")[c(7, 5)]) +
+  labs(x = "number of parameters",
+       y = "deviance") +
+  theme(legend.position = "none",
+        strip.background = element_rect(fill = alpha(carto_pal(7, "BurgYl")[1], 1/4), 
+                                        color = "transparent")) +
+  facet_wrap(~ n, scale = "free_y")
+```
+
 ## 7.4 Predicting predictive accuracy
 ### 7.4.1 Cross-validation
 ### 7.4.2 Information criteria
-WAIC formula
-$$
-WAIC(y, \theta) = -2(lppd - \sum_{i}var_{\theta}log p(y_{i}|\theta))
-$$
-
-#### 7.4.2.1 Overthinking: WAIC calculations
+#### 7.4.2.1 Overthinking: WAIC calculations.
 ```{r}
 data(cars)
 
@@ -661,11 +772,11 @@ b7.m <-
 print(b7.m)
 ```
 
-Now use the ```brms::log_lik()``` function to return the log-likelihood for each observation i at each posterior draw s, where S = 4000
+Now use the brms::log_lik() function to return the log-likelihood for each observation i at each posterior draw s, where S = 4000
 ```{r}
 n_cases <- nrow(cars)
 
-ll <-
+ll <- 
   log_lik(b7.m) %>% 
   data.frame() %>% 
   set_names(c(str_c(0, 1:9), 10:n_cases))
@@ -673,11 +784,6 @@ ll <-
 dim(ll)
 ```
 
-We have a 4,000 x 50 data frame with posterior draws in rows and cases in columns. Computing the lppd, the "Bayesian deviance", takes a bit of leg work. Recall the formula for lppd,
-$$
-lppd(y, \theta) = \sum_{i}log \frac{1}{S} \sum_{s}p(y_{i}|\theta_{s}),
-$$
-where $p(y_{i}|\theta_{s})$ is the likelihood of case i on posterior draw s. Since ```log_lik()``` returns the pointwise log-likelihood, our first step is to exponentiate those value. For each case ```i``` (i.e., $\sum_{i}$), we then take the average likelihood value [i.e., $\frac{1}{S} \sum_{s} p(y_{i}|\Theta_{s})$ and transform the result by taking its log [i.e., $log(\frac{1}{S} \sum_{S}p(y_{i}|\Theta_{S}))$]. Here we'll save the pointwise solution as ```log_mu_l```.
 ```{r}
 log_mu_l <-
   ll %>% 
@@ -686,7 +792,7 @@ log_mu_l <-
                values_to = "loglikelihood") %>% 
   mutate(likelihood = exp(loglikelihood)) %>% 
   group_by(i) %>% 
-  summarise(log_mean_likelihood = mean(likelihood) %>% log())
+  summarise(log_mean_likelihood = mean(likelihood %>% log()))
 
 (
   lppd <-
@@ -695,11 +801,6 @@ log_mu_l <-
     pull(lppd)
 )
 ```
-
-calculate $p_{WAIC}$ as follows
-$$
-p_{WAIC} = \sum_{i = 1}^{N}V(y_{i}).
-$$
 
 ```{r}
 v_i <-
@@ -718,7 +819,6 @@ pwaic <-
 pwaic
 ```
 
-Now we can plug our hand-made ```lppd``` and ```pwaic``` values into the formula $-2(lppd - p_{WAIC}$ to compute the WAIC. Compare it to the value returned by the brms ```waic()``` function.
 ```{r}
 -2 * (lppd - pwaic)
 ```
@@ -727,25 +827,65 @@ Now we can plug our hand-made ```lppd``` and ```pwaic``` values into the formula
 waic(b7.m)
 ```
 
-Calculate WAIC standard error
 ```{r}
-tibble(lppd = pull(log_mu_l, log_mean_likelihood),
+(lppd - pwaic)
+```
+
+```{r}
+tibble(lppd   = pull(log_mu_l, log_mean_likelihood),
        p_waic = pull(v_i, var_loglikelihood)) %>% 
   mutate(waic_vec = -2 * (lppd - p_waic)) %>% 
   summarise(waic_se = sqrt(n_cases * var(waic_vec)))
 ```
 
-Pointwise values from ```brms::waic()```, just index.
 ```{r}
 waic(b7.m)$pointwise %>% 
   head()
 ```
 
-### 7.4.3 Comparing CV, PSIS, and WAIC.
-Skipped because of long computation time
+### 7.4.3 Comparing CV, PSIS, and WAIC
+```{r}
+make_sim <- function(n, k, b_sigma) {
+  
+  r <- mcreplicate(n = n_sim, 
+                   expr = sim_train_test(
+                     N       = n,
+                     k       = k,
+                     b_sigma = b_sigma,
+                     WAIC    = T,
+                     LOOCV   = T, 
+                     LOOIC   = T),
+                   mc.cores = n_cores)
+  
+  t <- 
+    tibble(
+      deviance_os = mean(unlist(r[2, ])),
+      deviance_w  = mean(unlist(r[3, ])),
+      deviance_p  = mean(unlist(r[11, ])),
+      deviance_c  = mean(unlist(r[19, ])),
+      error_w     = mean(unlist(r[7, ])),
+      error_p     = mean(unlist(r[15, ])),
+      error_c     = mean(unlist(r[20, ]))
+    )
+  
+  return(t)
+  
+}
+```
 
+```{r}
+n_sim <- 10
+n_cores <- 8
+
+s <-
+  crossing(n       = c(20, 100),
+           k       = 1:5,
+           b_sigma = c(0.5, 100)) %>%
+  mutate(sim = pmap(list(n, k, b_sigma), make_sim)) %>% 
+  unnest(sim)
+```
 ## 7.5 Model comparison
-### 7.5.1 Model mis-selection
+### 7.5.1 Model mis-selection.
 ```{r}
 b6.6 <- readRDS("fits/b06.06.rds")
 b6.7 <- readRDS("fits/b06.07.rds")
@@ -756,7 +896,6 @@ b6.8 <- readRDS("fits/b06.08.rds")
 waic(b6.7)
 ```
 
-Following the version 2.8.0 update, part of the suggested workflow for using information criteria with brms (i.e., execute ?loo.brmsfit) is to add the estimates to the brm() fit object itself. You do that with the add_criterion() function. Here’s how we’d do so with b6.7.
 ```{r}
 b6.7 <- add_criterion(b6.7, criterion = "waic")
 ```
@@ -775,7 +914,6 @@ w <- loo_compare(b6.6, b6.7, b6.8, criterion = "waic")
 
 print(w)
 ```
-
 ```{r}
 print(w, simplify = F)
 ```
@@ -792,7 +930,7 @@ str(w)
 ```{r}
 print(w, simplify = F)
 ```
-Okay, we’ve deviated a bit from the text. Let’s reign things back in and note that right after McElreath’s R code 7.26, he wrote: “PSIS will give you almost identical values. You can add func=PSIS to the compare call to check” (p. 227). Our brms::loo_compare() function has a similar argument, but it’s called criterion. We set it to criterion = "waic" to compare the models by the WAIC. What McElreath is calling func=PSIS, we’d call criterion = "loo". Either way, we’re asking the software the compare the models using leave-one-out cross-validation with Pareto-smoothed importance sampling.
+
 ```{r}
 b6.6 <- add_criterion(b6.6, criterion = "loo")
 b6.7 <- add_criterion(b6.7, criterion = "loo")
@@ -802,8 +940,6 @@ b6.8 <- add_criterion(b6.8, criterion = "loo")
 loo_compare(b6.6, b6.7, b6.8, criterion = "loo") %>% 
   print(simplify = F)
 ```
-
-Compute standard error of the WAIC difference for the models m6.7 and m6.8
 ```{r}
 n <- length(b6.7$criteria$waic$pointwise[, "waic"])
 
@@ -817,6 +953,7 @@ tibble(waic_b6.7 = b6.7$criteria$waic$pointwise[, "waic"],
 w[2, 2] * 2
 ```
 
+Presuming the difference is Gaussian distributed, here’s our 99% interval.
 ```{r}
 (w[2, 1] * -2) + c(-1, 1) * (w[2, 2] * 2) * 2.6
 ```
@@ -862,15 +999,15 @@ model_weights(b6.6, b6.7, b6.8, weights = "waic") %>%
   round(digits = 2)
 ```
 
-### 7.5.2 Outliers and other illusions
+### 7.5.2 Outliers and other illusions.
 ```{r}
-data("WaffleDivorce", package = "rethinking")
+data(WaffleDivorce, package = "rethinking")
 
 d <-
   WaffleDivorce %>% 
   mutate(d = rethinking::standardize(Divorce),
          m = rethinking::standardize(Marriage),
-         a = rethinking::standardize(MedianAgeMarriage),)
+         a = rethinking::standardize(MedianAgeMarriage))
 
 rm(WaffleDivorce)
 ```
@@ -944,23 +1081,19 @@ pareto_k_values(loo(b5.3))[13]
 ```
 
 ```{r}
-b5.3$criteria$loo$diagnostics$pareto_k[13]
-```
-
-```{r}
 b5.3 <- add_criterion(b5.3, "waic", file = "fits/b05.03")
 ```
 
-
 ```{r}
 tibble(pareto_k = b5.3$criteria$loo$diagnostics$pareto_k,
-       p_waic   = b5.3$criteria$waic$pointwise[, "p_waic"],
-       Loc      = pull(d, Loc)) %>% 
+       p_waic = b5.3$criteria$waic$pointwise[, "p_waic"],
+       Loc = pull(d, Loc)) %>% 
   
   ggplot(aes(x = pareto_k, y = p_waic, color = Loc == "ID")) +
-  geom_vline(xintercept = .5, linetype = 2, color = "black", alpha = 1/2) +
   geom_point(aes(shape = Loc == "ID")) +
-  geom_text(data = . %>% filter(p_waic > 0.5),
+  geom_vline(xintercept = 0.4, linetype = "dashed",
+             color = "black", alpha = 1/2) +
+  geom_text(data = . %>% dplyr::filter(p_waic > 0.4),
             aes(x = pareto_k - 0.03, label = Loc),
             hjust = 1) +
   scale_color_manual(values = carto_pal(7, "BurgYl")[c(5, 7)]) +
@@ -974,18 +1107,20 @@ waic(b5.3)
 ```
 
 ```{r}
-tibble(x = seq(from = -6, to = 6, by = 0.01)) %>% 
-  mutate(Gaussian    = dnorm(x),
-         "Student-t" = rethinking::dstudent(x)) %>% 
+tibble(x = seq(from = -6, to = 6, by = .01)) %>% 
+  mutate(Gaussian = dnorm(x),
+         `Student-t` = dstudent(x)) %>% 
   pivot_longer(-x,
                names_to = "likelihood",
                values_to = "density") %>% 
   mutate(`minus log density` = -log(density)) %>% 
   pivot_longer(contains("density")) %>% 
   
-  ggplot(aes(x = x, y = value, group = likelihood, color = likelihood)) +
+  ggplot(aes(x = x, y = value, group = likelihood,
+             color = likelihood)) +
   geom_line() +
-  scale_color_manual(values = c(carto_pal(7, "BurgYl")[6], "black")) +
+  scale_color_manual(values = c(carto_pal(7, "BurgYl")[6],
+                                "black")) +
   ylim(0, NA) +
   labs(x = "value", y = NULL) +
   theme(strip.background = element_blank()) +
@@ -993,12 +1128,12 @@ tibble(x = seq(from = -6, to = 6, by = 0.01)) %>%
 ```
 
 ```{r}
-b5.3t <- 
-  brm(data = d, 
+b5.3t <-
+  brm(data = d,
       family = student,
       bf(d ~ 1 + m + a, nu = 2),
-      prior = c(prior(normal(0, 0.2), class = Intercept),
-                prior(normal(0, 0.5), class = b),
+      prior = c(prior(normal(0, .2), class = Intercept),
+                prior(normal(0, .5), class = b),
                 prior(exponential(1), class = sigma)),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
       seed = 5,
@@ -1015,12 +1150,12 @@ b5.3t <- add_criterion(b5.3t, criterion = c("loo", "waic"))
 
 ```{r}
 tibble(pareto_k = b5.3t$criteria$loo$diagnostics$pareto_k,
-       p_waic   = b5.3t$criteria$waic$pointwise[, "p_waic"],
-       Loc      = pull(d, Loc)) %>% 
+       p_waic = b5.3t$criteria$waic$pointwise[, "p_waic"],
+       Loc = pull(d, Loc)) %>% 
   
   ggplot(aes(x = pareto_k, y = p_waic, color = Loc == "ID")) +
   geom_point(aes(shape = Loc == "ID")) +
-  geom_text(data = . %>% filter(Loc %in% c("ID", "ME")),
+  geom_text(data = . %>% dplyr::filter(Loc %in% c("ID", "ME")),
             aes(x = pareto_k - 0.005, label = Loc),
             hjust = 1) +
   scale_color_manual(values = carto_pal(7, "BurgYl")[c(5, 7)]) +
@@ -1034,7 +1169,8 @@ loo_compare(b5.3, b5.3t, criterion = "waic") %>% print(simplify = F)
 ```
 
 ```{r}
-loo_compare(b5.3, b5.3t, criterion = "loo") %>% print(simplify = F)
+loo_compare(b5.3, b5.3t, criterion = "loo") %>% 
+  print(simplify = F)
 ```
 
 ```{r}
@@ -1084,26 +1220,26 @@ tibble(nu = seq(from = 2.1, to = 20, by = 0.01)) %>%
   labs(subtitle = expression(Student-t(nu*', '*0*', '*1)),
        y = expression(standard~deviation*", "*~sqrt(nu/(nu-2))))
 ```
-## 7.6 Bonus: $R^2$ talk
+
+## 7.6 Bonus: R2 talk
 ```{r}
 bayes_R2(b5.3) %>% round(digits = 3)
 ```
 
 ```{r}
-rbind(bayes_R2(b5.1), 
-      bayes_R2(b5.2), 
-      bayes_R2(b5.3)) %>%
-  data.frame() %>%
-  mutate(model                   = c("b5.1", "b5.2", "b5.3"),
-         r_square_posterior_mean = round(Estimate, digits = 3)) %>%
+rbind(bayes_R2(b5.1),
+      bayes_R2(b5.2),
+      bayes_R2(b5.3)) %>% 
+  data.frame() %>% 
+  mutate(model = c("b5.1", "b5.2", "b5.3"),
+         r_square_posterior_mean = round(Estimate, digits = 3)) %>% 
   select(model, r_square_posterior_mean)
 ```
 
 ```{r}
 r2_b5.1 <- bayes_R2(b5.1, summary = F)
 
-r2_b5.1 %>%
-  glimpse()
+r2_b5.1 %>% glimpse()
 ```
 
 ```{r}
@@ -1111,17 +1247,16 @@ r2 <-
   cbind(bayes_R2(b5.1, summary = F),
         bayes_R2(b5.2, summary = F)) %>% 
   data.frame() %>% 
-  set_names(str_c("b5.", 1:2)) 
-  
+  set_names(str_c("b5.", 1:2))
+
 r2 %>% 
   ggplot() +
-  geom_density(aes(x = b5.1),
-               alpha = 3/4, linewidth = 0, fill = carto_pal(7, "BurgYl")[4]) +
-  geom_density(aes(x = b5.2),
-               alpha = 3/4, linewidth = 0, fill = carto_pal(7, "BurgYl")[6]) +
-  annotate(geom = "text", 
-           x = c(.1, .34), y = 3.5, 
-           label = c("b5.2", "b5.1"), 
+  geom_density(aes(x = b5.1), alpha = 3/4, linewidth = 0,
+               fill = carto_pal(7, "BurgYl")[4]) +
+  geom_density(aes(x = b5.2), alpha = 3/4, linewidth = 0,
+               fill = carto_pal(7, "BurgYl")[6]) +
+  annotate(geom = "text", x = c(.1, .34), y = 3.5,
+           label = c("b5.2", "b5.1"),
            color = alpha("white", 3/4), family = "Courier") +
   scale_x_continuous(NULL, limits = c(0, 1)) +
   scale_y_continuous(NULL, breaks = NULL) +
@@ -1129,12 +1264,12 @@ r2 %>%
 ```
 
 ```{r}
-r2 %>%
+r2 %>% 
   mutate(diff = b5.2 - b5.1) %>% 
   
   ggplot(aes(x = diff, y = 0)) +
   stat_halfeye(point_interval = median_qi, .width = .95,
-               fill = carto_pal(7, "BurgYl")[5], 
+               fill = carto_pal(7, "BurgYl")[5],
                color = carto_pal(7, "BurgYl")[7]) +
   scale_y_continuous(NULL, breaks = NULL) +
   labs(subtitle = expression(Turns~out~b5.2~had~a~lower~italic(R)^2~than~b5.1),

@@ -3,25 +3,20 @@ title: "8 Conditional Manatees"
 format: html
 ---
 
-```{r}
-rm(list = ls())
-library(tidyverse)
-library(brms)
-library(tidybayes)
-library(ggthemes)
-library(ggdag)
-library(ggrepel)
-library(patchwork)
-```
-
 ## 8.1 Building an interaction
 ```{r}
 data(rugged, package = "rethinking")
 d <- rugged
 rm(rugged)
+
+# may as well load this, too
+library(brms)
 ```
 
 ```{r}
+library(tidyverse)
+library(ggthemes)
+
 theme_set(
   theme_pander() +
     theme(text = element_text(family = "Times"),
@@ -30,6 +25,8 @@ theme_set(
 ```
 
 ```{r}
+library(ggdag)
+
 dag_coords <-
   tibble(name = c("R", "G", "C", "U"),
          x = c(1, 2, 3, 2),
@@ -42,15 +39,13 @@ dagify(R ~ U,
   ggplot(aes(x = x, y = y, xend = xend, yend = yend)) +
   geom_dag_point(aes(color = name == "U"),
                  alpha = 1/2, size = 6, show.legend = F) +
-  geom_point(x = 2, y = 1, size = 6, shape = 1, 
-             stroke = 3/4, color = palette_pander(n = 2)[2]) +
+  geom_point(x = 2, y = 1, size = 6, shape = 1, stroke = 3/4,
+             color = palette_pander(n = 2)[2]) +
   geom_dag_text(color = "black", family = "Times") +
   geom_dag_edges() +
   scale_color_pander() +
   theme_dag()
 ```
-
-#### 8.1.0.1 Overthinking: Not so simple causation
 ```{r}
 dag_coords <-
   tibble(name = c("G", "R", "H", "C", "U"),
@@ -73,9 +68,9 @@ dagify(G ~ R + U + H,
   theme_dag()
 ```
 
-### 8.1.1 Making a rugged model
+### 8.1.1 Making a rugged model.
 ```{r}
-# make the log version of criterion
+# make the log version of the criterion
 d <-
   d %>% 
   mutate(log_gdp = log(rgdppc_2000))
@@ -90,6 +85,9 @@ dd <-
 ```
 
 ```{r}
+library(ggrepel)
+library(patchwork)
+
 # African nations
 p1 <-
   dd %>% 
@@ -100,14 +98,14 @@ p1 <-
               color = palette_pander(n = 2)[1]) +
   geom_point(color = palette_pander(n = 2)[1]) +
   geom_text_repel(data = . %>% 
-                    filter(country %in% c("Lesotho", "Seychelles")),
+                    dplyr::filter(country %in% c("Lesotho", "Seychelles")),
                   aes(label = country),
                   size = 3, family = "Times", seed = 8) +
   labs(subtitle = "African nations",
        x = "ruggedness (standardized)",
-       y = "log GDP (as proportion of the mean)")
+       y = "log GDP (as proportion of mean)")
 
-# Non_African nations
+# Non-African nations
 p2 <-
   dd %>% 
   filter(cont_africa == 0) %>% 
@@ -117,8 +115,8 @@ p2 <-
               color = palette_pander(n = 2)[2]) +
   geom_point(color = palette_pander(n = 2)[2]) +
   geom_text_repel(data = . %>% 
-                    filter(country %in% c("Switzerland", "Tajikistan")),  
-                  aes(label = country), 
+                    dplyr::filter(country %in% c("Switzerland", "Tajikistan")),
+                  aes(label = country),
                   size = 3, family = "Times", seed = 8) +
   xlim(0, 1) +
   labs(subtitle = "Non-African nations",
@@ -129,7 +127,6 @@ p2 <-
 p1 + p2 + plot_annotation(title = "Figure 8.2. Separate linear regressions inside and outside of Africa")
 ```
 
-Our first Bayesian model will follow the form and we compute rugged_std
 ```{r}
 mean(dd$rugged_std)
 ```
@@ -155,7 +152,7 @@ b8.1 <-
 ```
 
 ```{r}
-prior <- prior_draws(b8.1)
+prior <- prior_draws(b8.1) 
 
 set.seed(8)
 
@@ -170,13 +167,12 @@ p1 <-
   ggplot(aes(x = rugged_std, y = log_gdp_std, group = rowname)) +
   geom_hline(yintercept = range(dd$log_gdp_std), linetype = 2) +
   geom_line(color = palette_pander(n = 2)[2], alpha = .4) +
-  geom_abline(intercept = 1.3, slope = -0.6,
-              color = palette_pander(n = 2)[1], linewidth = 2) +
+  geom_abline(intercept = 1.3, slope = -0.6, 
+              color = palette_pander(n = 2)[1], 
+              linewidth = 2) +
   labs(subtitle = "Intercept ~ dnorm(1, 1)\nb ~ dnorm(0, 1)",
-       x = "ruggedness",
-       y = "log GDP (prop of mean)") +
-  coord_cartesian(xlim = c(0, 1),
-                  ylim = c(0.5, 1.5))
+       x = "ruggedness", y = "log GDP (prop of mean)") +
+  coord_cartesian(xlim = c(0, 1), ylim = c(0.5, 1.5))
 
 p1
 ```
@@ -191,12 +187,11 @@ b8.1b <-
   brm(data = dd,
       family = gaussian,
       log_gdp_std ~ 1 + rugged_std_c,
-      prior = c(prior(normal(1, .1), class = Intercept),
+      prior = c(prior(normal(1, 0.1), class = Intercept),
                 prior(normal(0, .3), class = b),
                 prior(exponential(1), class = sigma)),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
-      seed = 8,
-      sample_prior = T,
+      seed = 8, sample_prior = T, 
       file = "fits/b08.01b")
 ```
 
@@ -215,21 +210,17 @@ p2 <-
   geom_hline(yintercept = range(dd$log_gdp_std), linetype = 2) +
   geom_line(color = palette_pander(n = 2)[2], alpha = .4) +
   scale_y_continuous("", breaks = NULL) +
-  labs(subtitle = "Intercept ~ dnorm(1, 0.1)\nb~ dnorm(0, 0.3)",
+  labs(subtitle = "Intercept ~ dnorm(1, 0.1)\nb ~ dnorm(0, 0.3)",
        x = "ruggedness") +
   coord_cartesian(xlim = c(0, 1),
                   ylim = c(.5, 1.5))
 
-p1 + p2 +
-  plot_annotation(title = "Simulating in search of reasonable priors for the terrain ruggedness example.",
-                  theme = theme(plot.title = element_text(size = 12)))
+p1 + p2 + plot_annotation(
+  title = "Simulating in search of reasonable priors for the terrain ruggedness example.",
+  theme = theme(plot.title = element_text(size = 12))
+)
 ```
-
-```{r}
-print(b8.1b)
-```
-
-### 8.1.2 Adding an indicator variable isn't enough
+### 8.1.2 Adding an indicator variable isn't enough.
 ```{r}
 dd <-
   dd %>% 
@@ -268,21 +259,25 @@ b8.2 <-
 b8.1b <- add_criterion(b8.1b, "waic")
 b8.2 <- add_criterion(b8.2, "waic")
 
-loo_compare(b8.1b, b8.2, criterion = "waic") %>% print(simplify = F)
+loo_compare(b8.1b, b8.2, criterion = "waic") %>% 
+  print(simplify = F)
 ```
 
 ```{r}
-model_weights(b8.1b, b8.2, weights = "waic") %>% round(digits = 3)
+model_weights(b8.1b, b8.2, weights = "waic") %>% 
+  round(digits = 3)
 ```
 
 ```{r}
 print(b8.2)
 ```
-Now extract the posterior draws, make a difference score for the two intercepts, and use tidybayes::qi() to compute the percentile-based 89% intervals for the difference.
+
 ```{r}
 post <-
   as_draws_df(b8.2) %>% 
   mutate(diff = b_cid1 - b_cid2)
+
+library(tidybayes)
 
 qi(post$diff, .width = .89)
 ```
@@ -293,12 +288,18 @@ nd <-
            rugged_std = seq(from = -.2, to = 1.2, length.out = 30)) %>% 
   mutate(rugged_std_c = rugged_std - mean(dd$rugged_std))
 
+# f <-
+#   fitted(b8.2,
+#          newdata = nd,
+#          probs = c(.015, .985)) %>% 
+#   data.frame() %>% 
+#   bind_cols(nd) %>% 
+#   mutate(cont_africa = ifelse(cid == 1, "Africa", "not Africa"))
+
 f <-
-  fitted(b8.2,
-         newdata = nd,
-         probs = c(.015, .985)) %>% 
-  data.frame() %>% 
-  bind_cols(nd) %>% 
+  nd %>% 
+  add_epred_draws(b8.2) %>% 
+  mean_qi(.epred, .width = .97) %>% 
   mutate(cont_africa = ifelse(cid == 1, "Africa", "not Africa"))
 
 # what did we do?
@@ -306,20 +307,19 @@ head(f)
 ```
 
 ```{r}
-dd %>%
-  mutate(cont_africa = ifelse(cont_africa == 1, "Africa", "not Africa")) %>%
+dd %>% 
+  mutate(cont_africa = ifelse(cont_africa == 1, "Africa", "not Africa")) %>% 
   
-  ggplot(aes(x = rugged_std, fill = cont_africa, color = cont_africa)) +
+  ggplot(aes(x = rugged_std, fill = cont_africa,
+             color = cont_africa)) +
   geom_smooth(data = f,
-              aes(y = Estimate, ymin = Q1.5, ymax = Q98.5),
+              aes(y = .epred, ymin = .lower, ymax = .upper),
               stat = "identity",
               alpha = 1/4, linewidth = 1/2) +
-  geom_point(aes(y = log_gdp_std),
-             size = 2/3) +
+  geom_point(aes(y = log_gdp_std), size = 2/3) +
   scale_fill_pander() +
-  scale_colour_pander() +
-  labs(subtitle = "b8.2",
-       x = "ruggedness (standardized)",
+  scale_color_pander() +
+  labs(subtitle = "b8.2", x = "ruggedness (standardized)",
        y = "log GDP (as proportion of mean)") +
   coord_cartesian(xlim = c(0, 1)) +
   theme(legend.background = element_blank(),
@@ -359,21 +359,21 @@ fitted(b8.2,
 
 ### 8.1.3 Adding an interaction does work.
 ```{r}
-b8.3 <- 
-  brm(data = dd, 
+b8.3 <-
+  brm(data = dd,
       family = gaussian,
-      bf(log_gdp_std ~ 0 + a + b * rugged_std_c, 
-         a ~ 0 + cid, 
+      bf(log_gdp_std ~ 0 + a + b * rugged_std_c,
+         a ~ 0 + cid,
          b ~ 0 + cid,
          nl = TRUE),
-      prior = c(prior(normal(1, 0.1), class = b, coef = cid1, nlpar = a),
-                prior(normal(1, 0.1), class = b, coef = cid2, nlpar = a),
-                prior(normal(0, 0.3), class = b, coef = cid1, nlpar = b),
-                prior(normal(0, 0.3), class = b, coef = cid2, nlpar = b),
+      prior = c(prior(normal(1, .1), class = b, coef = cid1, nlpar = a),
+                prior(normal(1, .1), class = b, coef = cid2, nlpar = a),
+                prior(normal(0, .3), class = b, coef = cid1, nlpar = b),
+                prior(normal(0, .3), class = b, coef = cid2, nlpar = b),
                 prior(exponential(1), class = sigma)),
-      iter = 2000, warmup = 1000, chains = 4, cores = 4,
-      seed = 8,
-      file = "fits/b08.03")
+  iter = 2000, warmup = 1000, chains = 4, cores = 4,
+  seed = 8,
+  file = "fits/b08.03")
 ```
 
 ```{r}
@@ -385,32 +385,32 @@ b8.1b <- add_criterion(b8.1b, "loo")
 b8.2 <- add_criterion(b8.2, "loo")
 b8.3 <- add_criterion(b8.3, c("loo", "waic"))
 
-loo_compare(b8.1b, b8.2, b8.3, criterion = "loo") %>% print(simplify = F)
+loo_compare(b8.1b, b8.2, b8.3, criterion = "loo") %>% 
+  print(simplify = F)
 ```
 
 ```{r}
-model_weights(b8.1b, b8.2, b8.3, weights = "loo") %>% round(digits = 2)
+model_weights(b8.1b, b8.2, b8.3, weights = "loo") %>% 
+  round(digits = 2)
 ```
 
-Pareto k diagnostic plot by feeding the results of the loo() function into plot()
 ```{r}
 loo(b8.3) %>% plot()
 ```
 
-Rank order the Pareto k value and taking a look at the top values
 ```{r}
 tibble(k = b8.3$criteria$loo$diagnostics$pareto_k,
        row = 1:170) %>% 
   arrange(desc(k))
 ```
 
-#### 8.1.3.1 Bonus: Give me the Student-t.
+#### 8.1.3.1 Bonus: Give me Student-t.
 ```{r}
 b8.3t <-
   brm(data = dd,
       family = student,
-      bf(log_gdp_std ~ 0 + a + b * rugged_std_c,
-         a ~ 0 + cid,
+      bf(log_gdp_std ~ 0 + a + b * rugged_std_c, 
+         a ~ 0 + cid, 
          b ~ 0 + cid,
          nu = 2,
          nl = TRUE),
@@ -429,24 +429,22 @@ b8.3t <- add_criterion(b8.3t, c("loo", "waic"))
 
 loo_compare(b8.3, b8.3t, criterion = "loo") %>% print(simplify = F)
 ```
-The PSIS-LOO-CV comparison suggests the robust Student- 
-t
-  model might be overfit. Just for kicks, we might make our own diagnostic plot to compare the two likelihoods by the Pareto  
-k
- values. To get a nice fine-grain sense of the distributions, we’ll employ the handy tidybayes::stat_dots() function which will display each value as an individual dot.
+
 ```{r}
 tibble(Normal = b8.3$criteria$loo$diagnostics$pareto_k,
-       "Student-t" = b8.3t$criteria$loo$diagnostics$pareto_k) %>% 
+       `Student-t` = b8.3t$criteria$loo$diagnostics$pareto_k) %>% 
   pivot_longer(everything(),
                values_to = "pareto_k") %>% 
   
   ggplot(aes(x = pareto_k, y = name)) +
-  geom_vline(xintercept = .5, linetype = 2, color = palette_pander(n = 5)[5]) +
+  geom_vline(xintercept = .5, linetype = 2, 
+             color = palette_pander(n = 5)[5]) +
   stat_dots(slab_fill = palette_pander(n = 4)[4],
             slab_color = palette_pander(n = 4)[4]) +
   annotate(geom = "text",
            x = .485, y = 1.5, label = "threshold", angle = 90,
-           family = "Times", color = palette_pander(n = 5)[5]) +
+           family = "Times", 
+           color = palette_pander(n = 5)[5]) +
   ylab(NULL) +
   coord_cartesian(ylim = c(1.5, 2.4))
 ```
@@ -459,33 +457,30 @@ fixef(b8.3) %>% round(digits = 2)
 fixef(b8.3t) %>% round(digits = 2)
 ```
 
-### 8.1.4 Plotting the interaction
+### 8.1.4 Plotting the interaction.
 ```{r}
 countries <- c("Equatorial Guinea", "South Africa", "Seychelles", "Swaziland", "Lesotho", "Rwanda", "Burundi", "Luxembourg", "Greece", "Switzerland", "Lebanon", "Yemen", "Tajikistan", "Nepal")
 
 f <-
-  fitted(b8.3,
-         # we already defined 'nd', above
-         newdata = nd,
-         probs = c(.015, .985)) %>% 
-  data.frame() %>% 
-  bind_cols(nd) %>% 
-  mutate(cont_africa = ifelse(cid == 1, "African nations", "Non-African nations"))
+  nd %>% 
+  add_epred_draws(b8.3) %>% 
+  mean_qi(.epred, .width = .97) %>% 
+  mutate(cont_africa = ifelse(cid == 1, "African nations",
+                              "Non-African nations"))
 
 dd %>% 
   mutate(cont_africa = ifelse(cont_africa == 1, "African nations", "Non-African nations")) %>% 
   
   ggplot(aes(x = rugged_std, y = log_gdp_std, fill = cont_africa, color = cont_africa)) +
   geom_smooth(data = f,
-              aes(y = Estimate, ymin = Q1.5, ymax = Q98.5),
-              stat = "identity",
-              alpha = 1/4, linewidth = 1/2) +
-  geom_text_repel(data = . %>% filter(country %in% countries),
-                  aes(label = country),
-                  size = 3, seed = 8,
-                  segment.color = "grey25", min.segment.length = 0) +
-  geom_point(aes(y = log_gdp_std),
-             size = 2/3) +
+              aes(y = .epred, ymin = .lower, ymax = .upper),
+              stat = "identity", alpha = 1/4,
+              linewidth = 1/2) +
+  geom_text_repel(data = . %>% dplyr::filter(country %in% countries),
+                  aes(label = country), size = 3, seed = 8,
+                  segment.color = "grey25",
+                  min.segment.length = 0) +
+  geom_point(aes(y = log_gdp_std), size = 2/3) +
   scale_fill_pander() +
   scale_color_pander() +
   labs(x = "ruggedness (standardized)",
@@ -497,10 +492,10 @@ dd %>%
 
 ## 8.2 Symmetry of interactions
 ```{r}
-fitted(b8.3, 
+fitted(b8.3,
        newdata = nd,
-       summary = F) %>%
-  data.frame() %>%
+       summary = F) %>% 
+  data.frame() %>% 
   pivot_longer(everything()) %>% 
   bind_cols(expand_grid(draws = 1:4000, nd)) %>% 
   select(-name) %>% 
@@ -517,11 +512,11 @@ fitted(b8.3,
   labs(x = "ruggedness (standardized)",
        y = "expected difference log GDP") +
   coord_cartesian(xlim = c(0, 1),
-                  ylim = c(-.3, .2))
+                  ylim = c(-0.3, 0.2))
 ```
 
 ## 8.3 Continuous interactions
-### 8.3.1 A winter flower
+### 8.3.1 A winter flower.
 ```{r}
 data(tulips, package = "rethinking")
 d <- tulips
@@ -530,7 +525,7 @@ rm(tulips)
 glimpse(d)
 ```
 
-### 8.3.2 The models
+### 8.3.2 The models.
 ```{r}
 d <-
   d %>% 
@@ -542,14 +537,14 @@ d <-
 ```{r}
 set.seed(8)
 
-tibble(a = rnorm(1e4, mean = .5, sd = 1)) %>% 
-  summarize(proportion_outside_of_the_range = sum(a < 0 | a > 1) / n())
+tibble(a = rnorm(1e4, mean = 0.5, sd = 1)) %>% 
+  summarise(proportion_outside_of_the_range = sum(a < 0 | a > 1) / n())
 ```
 
 ```{r}
 set.seed(8)
 
-tibble(a = rnorm(1e4, mean = 0.5, sd = 0.25)) %>% 
+tibble(a = rnorm(1e4, mean = .5, sd = .25)) %>% 
   summarise(proportion_outside_of_the_range = sum(a < 0 | a > 1) / n())
 ```
 
@@ -566,9 +561,9 @@ b8.4 <-
   brm(data = d,
       family = gaussian,
       blooms_std ~ 1 + water_cent + shade_cent,
-      prior = c(prior(normal(0.5, 0.25), class = Intercept),
-                prior(normal(0, 0.25), class = b, coef = water_cent),
-                prior(normal(0, 0.25), class = b, coef = shade_cent),
+      prior = c(prior(normal(0.5, .25), class = Intercept),
+                prior(normal(0, .25), class = b, coef = water_cent),
+                prior(normal(0, .25), class = b, coef = shade_cent),
                 prior(exponential(1), class = sigma)),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
       seed = 8,
@@ -581,13 +576,13 @@ print(b8.4)
 
 ```{r}
 b8.5 <-
-  brm(data = d, 
+  brm(data = d,
       family = gaussian,
       blooms_std ~ 1 + water_cent + shade_cent + water_cent:shade_cent,
-      prior = c(prior(normal(0.5, 0.25), class = Intercept),
-                prior(normal(0, 0.25), class = b, coef = water_cent),
-                prior(normal(0, 0.25), class = b, coef = shade_cent),
-                prior(normal(0, 0.25), class = b, coef = "water_cent:shade_cent"),
+      prior = c(prior(normal(.5, .25), class = Intercept),
+                prior(normal(0, .25), class = b, coef = water_cent),
+                prior(normal(0, .25), class = b, coef = shade_cent),
+                prior(normal(0, .25), class = b, coef = "water_cent:shade_cent"),
                 prior(exponential(1), class = sigma)),
       iter = 2000, warmup = 1000, chains = 4, cores = 4,
       seed = 8,
@@ -598,20 +593,20 @@ b8.5 <-
 print(b8.5)
 ```
 
+### 8.3.3 Plotting posterior predictions.
 ```{r}
-# loop over values of `water_c` and plot predictions
-for(s in -1:1) {
-  
+# loop over values of water_c and plot predictions
+for(s in -1:1){
   # define the subset of the original data
   dt <- d[d$shade_cent == s, ]
   # defining our new data
   nd <- tibble(shade_cent = s, water_cent = c(-1, 1))
   # use our sampling skills, like before
-  f <- 
-    fitted(b8.4, 
+  f <-
+    fitted(b8.4,
            newdata = nd,
-           summary = F) %>%
-    data.frame() %>%
+           summary = F) %>% 
+    data.frame() %>% 
     set_names("-1", "1") %>% 
     slice_sample(n = 20) %>% 
     mutate(row = 1:n()) %>% 
@@ -621,71 +616,77 @@ for(s in -1:1) {
     mutate(water_cent = as.double(water_cent))
   
   # specify our custom plot
-  fig <- 
+  fig <-
     ggplot(data = dt,
            aes(x = water_cent, y = blooms_std)) +
     geom_line(data = f,
               aes(group = row),
-              color = palette_pander(n = 6)[6], alpha = 1/5, linewidth = 1/2) +
+              color = palette_pander(n = 6)[6], alpha = 1/5,
+              linewidth = 1/2) +
     geom_point(color = palette_pander(n = 6)[6]) +
-    scale_x_continuous("Water (centered)", breaks = c(-1, 0, 1)) +
+    scale_x_continuous("Water (centered)", 
+                       breaks = c(-1, 0, 1)) +
     labs(title = paste("Shade (centered) =", s),
          y = "Blooms (standardized)") +
-    coord_cartesian(xlim = c(-1, 1), 
+    coord_cartesian(xlim = c(-1, 1),
                     ylim = c(0, 1))
   
   # plot that joint
   plot(fig)
-  
 }
 ```
 
+We don't need a loop we can use facet_grid
 ```{r}
 # augment the data
 points <-
-  d %>%
-  expand_grid(fit = c("b8.4", "b8.5")) %>%
+  d %>% 
+  expand_grid(fit = c("b8.4", "b8.5")) %>% 
   mutate(x_grid = str_c("shade_cent = ", shade_cent),
          y_grid = fit)
 
-# redefine `nd`
-nd <- crossing(shade_cent = -1:1, 
+# redefine nd
+nd <- crossing(shade_cent = -1:1,
                water_cent = c(-1, 1))
 
-# use `fitted()`
+# use fitted()
 set.seed(8)
 
 rbind(fitted(b8.4, newdata = nd, summary = F, ndraws = 20),
-      fitted(b8.5, newdata = nd, summary = F, ndraws = 20)) %>%
+      fitted(b8.5, newdata = nd, summary = F, ndraws = 20)) %>% 
   # wrangle
-  data.frame() %>%
-  set_names(mutate(nd, name = str_c(shade_cent, water_cent, sep = "_")) %>% pull()) %>%
+  data.frame() %>% 
+  set_names(
+    mutate(nd, 
+           name = str_c(shade_cent, water_cent, sep = "_")) %>% 
+      pull()) %>% 
   mutate(row = 1:n(),
-         fit = rep(c("b8.4", "b8.5"), each = n() / 2)) %>%
-  pivot_longer(-c(row:fit), values_to = "blooms_std") %>%
-  separate(name, into = c("shade_cent", "water_cent"), sep = "_") %>%
+         fit = rep(c("b8.4", "b8.5"), each = n() / 2)) %>% 
+  pivot_longer(-c(row:fit), values_to = "blooms_std") %>% 
+  separate(name, into = c("shade_cent", "water_cent"),
+           sep = "_") %>% 
   mutate(shade_cent = shade_cent %>% as.double(),
-         water_cent = water_cent %>% as.double()) %>%
-  # these will come in handy for `ggplot2::facet_grid()`
+         water_cent = water_cent %>% as.double()) %>% 
+  # these will come in handy for ggplot2::facet_grid()
   mutate(x_grid = str_c("shade_cent = ", shade_cent),
-         y_grid = fit) %>%
+         y_grid = fit) %>% 
   
   # plot!
   ggplot(aes(x = water_cent, y = blooms_std)) +
   geom_line(aes(group = row),
-            color = palette_pander(n = 6)[6], alpha = 1/5, linewidth = 1/2) +
+            color = palette_pander(n = 6)[6],
+            alpha = 1/5, linewidth = 1/2) +
   geom_point(data = points,
              color = palette_pander(n = 6)[6]) +
   scale_x_continuous("Water (centered)", breaks = c(-1, 0, 1)) +
   scale_y_continuous("Blooms (standardized)", breaks = c(0, .5, 1)) +
   ggtitle("Posterior predicted blooms") +
-  coord_cartesian(xlim = c(-1, 1),
-                  ylim = c(0, 1)) +
+  coord_cartesian(xlim = c(-1, 1), ylim = c(0, 1)) +
   theme(strip.background = element_rect(fill = alpha(palette_pander(n = 2)[2], 1/3))) +
   facet_grid(y_grid ~ x_grid)
 ```
 
-### 8.3.4 Plotting prior predictions
+### 8.3.4 Plotting prior predictions.
 ```{r}
 b8.4p <-
   update(b8.4,
@@ -706,37 +707,38 @@ b8.5p <-
 set.seed(8)
 
 rbind(fitted(b8.4p, newdata = nd, summary = F, ndraws = 20),
-      fitted(b8.5p, newdata = nd, summary = F, ndraws = 20)) %>% 
+      fitted(b8.5p, newdata = nd, summary = F, ndraws = 20)) %>%
   # wrangle
-  data.frame() %>% 
-  set_names(mutate(nd, name = str_c(shade_cent, water_cent, sep = "_")) %>% pull()) %>% 
+  data.frame() %>%
+  set_names(mutate(nd, name = str_c(shade_cent, water_cent, sep = "_")) %>% pull()) %>%
   mutate(row = rep(1:20, times = 2),
-         fit = rep(c("b8.4", "b8.5"), each = n() / 2)) %>% 
-  pivot_longer(-c(row:fit), values_to = "blooms_std") %>% 
-  separate(name, into = c("shade_cent", "water_cent"), sep = "_") %>% 
+         fit = rep(c("b8.4", "b8.5"), each = n() / 2)) %>%
+  pivot_longer(-c(row:fit), values_to = "blooms_std") %>%
+  separate(name, into = c("shade_cent", "water_cent"), sep = "_") %>%
   mutate(shade_cent = shade_cent %>% as.double(),
-         water_cent = water_cent %>% as.double()) %>% 
-  # these will come in handy for ggplot2::facet_grid()
+         water_cent = water_cent %>% as.double()) %>%
+  # these will come in handy for `ggplot2::facet_grid()`
   mutate(x_grid = str_c("shade_cent = ", shade_cent),
-         y_grid = fit) %>% 
+         y_grid = fit) %>%
   
   # plot!
   ggplot(aes(x = water_cent, y = blooms_std, group = row)) +
   geom_hline(yintercept = 0:1, linetype = 2) +
   geom_line(aes(alpha = row == 1, size = row == 1),
-             color = palette_pander(n = 6)[6]) +
+            color = palette_pander(n = 6)[6]) +
   scale_size_manual(values = c(1/2, 1)) +
   scale_alpha_manual(values = c(1/3, 1)) +
-  scale_x_continuous("Water (centered)", breaks= c(-1, 0, 1)) +
+  scale_x_continuous("Water (centered)", breaks = c(-1, 0, 1)) +
   scale_y_continuous("Blooms (standardized)", breaks = c(0, .5, 1)) +
   ggtitle("Prior predicted blooms") +
   coord_cartesian(xlim = c(-1, 1),
-                  ylim = c(-.5, 1.5)) +
+                  ylim = c(-0.5, 1.5)) +
   theme(legend.position = "none",
         strip.background = element_rect(fill = alpha(palette_pander(n = 2)[2], 1/3))) +
   facet_grid(y_grid ~ x_grid)
 ```
-## 8.4 Summary Bonus: conditional_effects()
+
+## 8.4 Bonus: conditional_effects()
 ```{r}
 b8.1b$formula
 ```
@@ -768,8 +770,7 @@ conditional_effects(b8.2)
 ```
 
 ```{r}
-b8.2$data %>% 
-  glimpse()
+b8.2$data %>% glimpse()
 ```
 
 ```{r}
@@ -788,11 +789,12 @@ conditional_effects(b8.3, effects = "rugged_std_c:cid")
 conditional_effects(b8.3, effects = "cid:rugged_std_c") %>% 
   plot(cat_args = list(size = 2))
 ```
+
 ```{r}
 b8.3$data %>% 
-  summarize(mean = mean(rugged_std_c),
-            "mean + 1 sd" = mean(rugged_std_c) + sd(rugged_std_c),
-            "mean - 1 sd" = mean(rugged_std_c) - sd(rugged_std_c)) %>% 
+  summarise(mean = mean(rugged_std_c),
+            `mean + 1 sd` = mean(rugged_std_c) + sd(rugged_std_c),
+            `mean - 1 sd` = mean(rugged_std_c) - sd(rugged_std_c)) %>% 
   mutate_all(round, digits = 2)
 ```
 

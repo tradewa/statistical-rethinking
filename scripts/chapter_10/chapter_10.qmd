@@ -14,19 +14,23 @@ d <-
          d = c(1, 2, 4, 2, 1),
          e = 2)
 
-# this is our analogue to McElreath's 'lapply()' code
+# this is our analogue to McElreath's lapply() code
 d %>% 
   mutate_all(~ . / sum(.)) %>% 
-  # the next few lines constitute our analogue to his sapply() code
+  # the next few lines consitute our analogue to his sapply() code
   pivot_longer(everything(), names_to = "plot") %>% 
   group_by(plot) %>% 
   summarise(h = -sum(ifelse(value == 0, 0, value * log(value))))
 ```
 ```{r}
 library(ghibli)
+```
 
+```{r}
 ghibli_palette("MarnieMedium1")
+```
 
+```{r}
 ghibli_palette("MarnieMedium1")[1:7]
 ```
 
@@ -41,12 +45,12 @@ d %>%
   geom_col(width = 1/5, fill = ghibli_palette("MarnieMedium1")[2]) +
   geom_text(aes(y = pebbles + 1, label = pebbles)) +
   geom_text(data = tibble(
-    letter  = letters[1:5],
-    bucket  = 5.5,
+    letter = letters[1:5],
+    bucket = 5.5,
     pebbles = 10.5,
-    label   = str_c(c(1, 90, 1260, 37800, 113400), 
-                    rep(c(" way", " ways"), times = c(1, 4)))),
-    aes(label = label), 
+    label = str_c(c(1, 90, 1260, 37800, 113400),
+                  rep(c(" way", " ways"), times = c(1, 4)))),
+    aes(label = label),
     hjust = 1) +
   scale_y_continuous(breaks = c(0, 5, 10), limits = c(0, 12)) +
   theme(panel.background = element_rect(fill = ghibli_palette("MarnieMedium1")[6]),
@@ -55,7 +59,6 @@ d %>%
   facet_wrap(~ letter, ncol = 2)
 ```
 
-We might plot our version of the final panel like so
 ```{r}
 d %>% 
   # the next four lines are the same from above
@@ -64,17 +67,17 @@ d %>%
   group_by(name) %>% 
   summarise(h = -sum(ifelse(value == 0, 0, value * log(value)))) %>% 
   # here's the R code 9.4 stuff
-  mutate(n_ways = c(1, 90, 1260, 37800, 113400)) %>% 
+  mutate(n_ways   = c(1, 90, 1260, 37800, 113400)) %>% 
   group_by(name) %>% 
   mutate(log_ways = log(n_ways) / 10,
-         text_y = ifelse(name < "c", h + .15, h - .15)) %>% 
+         text_y   = ifelse(name < "c", h + .15, h - .15)) %>%
   
   # plot
   ggplot(aes(x = log_ways, y = h)) +
   geom_abline(intercept = 0, slope = 1.37, color = "white") +
   geom_point(size = 2.5, color = ghibli_palette("MarnieMedium1")[7]) +
   geom_text(aes(y = text_y, label = name)) +
-  labs(x = "log (ways) per pebble",
+  labs(x = "log(ways) per pebble",
        y = "entropy") +
   theme(panel.background = element_rect(fill = ghibli_palette("MarnieMedium1")[6]),
         panel.grid = element_blank())
@@ -82,17 +85,17 @@ d %>%
 
 ### 10.1.1 Gaussian.
 ```{r}
-alpha_per_beta <- function(beta, variance = 1){
+alpha_per_beta <- function(beta, variance = 1) {
   sqrt((variance * gamma(1 / beta)) / gamma(3 / beta))
 }
 
 crossing(value = seq(from = -5, to = 5, by = .1),
          # I arrived at these values by trial and error
-         beta = c(1, 1.5, 2, 4)) %>% 
-  mutate(mu = 0,
+         beta  = c(1, 1.5, 2, 4)) %>% 
+  mutate(mu    = 0,
          alpha = alpha_per_beta(beta)) %>% 
   # behold the formula for the generalized normal distribution in code!
-  mutate(density = (beta / (2 * alpha * gamma(1 / beta))) *
+  mutate(density = (beta / (2 * alpha * gamma(1 / beta))) * 
            exp(1) ^ (-1 * (abs(value - mu) / alpha) ^ beta)) %>% 
   
   # plot
@@ -107,16 +110,10 @@ crossing(value = seq(from = -5, to = 5, by = .1),
         panel.grid = element_blank())
 ```
 
-Once you have $\alpha$ and $\beta$, the entropy equation for the generalized normal distribution is
-$$
-\text{entropy} = \frac{1}{\beta} - \text{log}\left[\frac{\beta}{2\alpha\Gamma(1/\beta)}\right]
-$$
-
-Here's how we can use that equation to make our version of right panel
 ```{r}
 tibble(beta = seq(from = 1, to = 4, length.out = 100)) %>% 
   mutate(alpha = alpha_per_beta(beta)) %>% 
-  mutate(entropy = (1 / beta) - log((beta) / (2 * alpha * gamma(1 / beta)))) %>% 
+  mutate(entropy = (1 / beta) - log((beta) / (2 * alpha * gamma(1 / beta))))  %>% 
   
   ggplot(aes(x = beta, y = entropy)) +
   geom_vline(xintercept = 2, color = "white") +
@@ -124,35 +121,24 @@ tibble(beta = seq(from = 1, to = 4, length.out = 100)) %>%
   xlab(expression(beta~(i.e.*", "*shape))) +
   theme(panel.background = element_rect(fill = ghibli_palette("MarnieMedium2")[7]),
         panel.grid = element_blank())
-
 ```
 
-### 10.1.2 Binomial
-The binomial likelihood entails
-$$
-\text{Pr}(y|n, p) = \frac{n!}{y!(n - y)!}p^y(1 - p)^{n - y}
-$$
-
+### 10.1.2 Binomial.
 ```{r}
-count_ways <- function(n, y){
+count_ways <- function(n, y) {
   # n = the total number of trials (i.e., the number of rows in your vector)
   # y = the total number of 1s (i.e., successes) in your vector
-  (factorial(n) / factorial(y) * factorial(n - y))
+  (factorial(n) / (factorial(y) * factorial(n - y)))
 }
 ```
-Now consider three sequences:
-- 0, 0, 0, 0 (i.e., n = 4 and y = 0)
-- 1, 0, 0, 0 (i.e., n = 4 and y = 1)
-- 1, 1, 0, 0 (i.e., n = 4 and y = 2)
 
-We can organize that information in a little tibble and then demo our count_ways() function
 ```{r}
 tibble(sequence = 1:3,
-       n = 4,
-       y = c(0, 1, 2)) %>% 
+       n        = 4,
+       y        = c(0, 1, 2)) %>% 
   mutate(n_ways = count_ways(n = n, y = y))
 ```
-Here's the pre-Figure 10.3 data McElreath presented on page 308.
+
 ```{r}
 # data
 d <-
@@ -167,16 +153,16 @@ d %>%
   mutate_if(is.numeric, ~MASS::fractions(.) %>% as.character()) %>% 
   flextable::flextable()
 ```
-Those data take just a tiny bit of wrangling before they're ready to plot in our version of Figure 10.3
+
 ```{r}
-d <-
+d <- 
   d %>% 
   pivot_longer(-distribution,
-               names_to = "sequence",
+               names_to = "sequence", 
                values_to = "probability") %>% 
   mutate(sequence = factor(sequence, levels = c("ww", "bw", "wb", "bb")))
 
-d %>% 
+d  %>% 
   ggplot(aes(x = sequence, y = probability, group = 1)) +
   geom_point(size = 2, color = ghibli_palette("PonyoMedium")[4]) +
   geom_line(color = ghibli_palette("PonyoMedium")[5]) +
@@ -189,38 +175,51 @@ d %>%
   facet_wrap(~ distribution)
 ```
 
-If we go step by step, we might count the expected value for each distribution like follows.
 ```{r}
 d %>% 
-  # str_count() will count the number of times "b" occurs within a given row of sequence
+  # `str_count()` will count the number of times "b" occurs within a given row of `sequence`
   mutate(n_b = str_count(sequence, "b")) %>% 
   mutate(product = probability * n_b) %>% 
   group_by(distribution) %>% 
   summarise(expected_value = sum(product))
 ```
 
-We can use the same group_by strategy on the way to computing the entropy values
 ```{r}
 d %>% 
   group_by(distribution) %>% 
   summarise(entropy = -sum(probability * log(probability)))
 ```
 
-I’m going to alter McElreath’s simulation function from R code 10.9 to take a seed argument. In addition, I altered the names of the objects within the function and changed the output to a tibble that will also include the conditions “ww”, “bw”, “wb”, and “bb”.
 ```{r}
-sim_p <- function(seed, g = 1.4){
+p <- 0.7
+
+(
+  a <- 
+  c((1 - p)^2, 
+    p * (1 - p), 
+    (1 - p) * p, 
+    p^2)
+)
+```
+
+```{r}
+-sum(a * log(a))
+```
+
+```{r}
+sim_p <- function(seed, g = 1.4) {
   
   set.seed(seed)
   
   x_123 <- runif(3)
-  x_4 <- ((g) * sum(x_123) - x_123[2] - x_123[3]) / (2 - g)
-  z <- sum(c(x_123, x_4))
-  p <- c(x_123, x_4) / z
+  x_4   <- ((g) * sum(x_123) - x_123[2] - x_123[3]) / (2 - g)
+  z     <- sum(c(x_123, x_4))
+  p     <- c(x_123, x_4) / z
   
-  tibble(h = -sum(p * log(p)),
-         p = p,
-         key = factor(c("ww", "bw", "wb", "bb"), 
-                      levels = c("ww", "bw", "wb", "bb")))
+  tibble(h   = -sum(p * log(p)), 
+         p   = p,
+         key = factor(c("ww", "bw", "wb", "bb"), levels = c("ww", "bw", "wb", "bb")))
+  
 }
 ```
 
@@ -242,7 +241,6 @@ d <-
 head(d)
 ```
 
-In order to intelligently choose which four replications we want to highlight in Figure 10.4, we’ll want to rank order them by entropy, h.
 ```{r}
 ranked_d <-
   d %>% 
@@ -312,29 +310,29 @@ ranked_d %>%
   slice(1)
 ```
 
+```{r}
+a
+```
+
 ## 10.2 Generalized linear models
 ```{r}
-tibble(x = seq(from = -1, to = 3, by = .01)) %>% 
+tibble(x = seq(from = -1, to = 3, by = .01)) %>%
   mutate(probability = .35 + x * .5) %>% 
   
   ggplot(aes(x = x, y = probability)) +
   geom_rect(xmin = -1, xmax = 3,
-            ymin = 0, ymax = 1,
+            ymin = 0,  ymax = 1,
             fill = ghibli_palette("MononokeMedium")[5]) +
-  geom_hline(yintercept = 0:1, linetype = 2,
-             color = ghibli_palette("MononokeMedium")[7]) +
-  geom_line(aes(linetype = probability > 1, 
-                color = probability > 1),
+  geom_hline(yintercept = 0:1, linetype = 2, color = ghibli_palette("MononokeMedium")[7]) +
+  geom_line(aes(linetype = probability > 1, color = probability > 1),
             linewidth = 1) +
   geom_segment(x = 1.3, xend = 3,
                y = 1, yend = 1,
-               linewidth = 2/3,
-               color = ghibli_palette("MononokeMedium")[3]) +
+               linewidth = 2/3, color = ghibli_palette("MononokeMedium")[3]) +
   annotate(geom = "text",
            x = 1.28, y = 1.04, hjust = 1,
            label = "This is why we need link functions",
-           color = ghibli_palette("MononokeMedium")[4], 
-           size = 2.6) +
+           color = ghibli_palette("MononokeMedium")[4], size = 2.6) + 
   scale_color_manual(values = c(ghibli_palette("MononokeMedium")[3:4])) +
   scale_y_continuous(breaks = c(0, .5, 1)) +
   coord_cartesian(xlim = c(0, 2),
@@ -343,8 +341,7 @@ tibble(x = seq(from = -1, to = 3, by = .01)) %>%
         panel.background = element_rect(fill = ghibli_palette("MononokeMedium")[1]),
         panel.grid = element_blank())
 ```
-
-### 10.2.1 Meet the family
+### 10.2.1 Meet the family.
 ```{r}
 length_out <- 100
 
@@ -355,7 +352,6 @@ tibble(x = seq(from = 0, to = 5, length.out = length_out)) %>%
   mutate(label = ifelse(name == "Gamma",
                         "y %~% Gamma(lambda, kappa)",
                         "y %~% Exponential(lambda)")) %>% 
-  
   ggplot(aes(x = x, y = density)) +
   geom_area(fill = ghibli_palette("SpiritedMedium")[3]) +
   scale_x_continuous(NULL, breaks = NULL) +
@@ -366,11 +362,11 @@ tibble(x = seq(from = 0, to = 5, length.out = length_out)) %>%
         strip.background = element_rect(fill = ghibli_palette("SpiritedMedium")[7])) +
   facet_wrap(~ label, scales = "free_y", labeller = label_parsed)
 ```
-Gaussian
+
 ```{r}
-tibble(x = seq(from = -5, to = 5, length.out = length_out)) %>%
+tibble(x = seq(from = -5, to = 5, length.out = length_out)) %>% 
   mutate(density = dnorm(x),
-         strip = "y %~% Normal(mu, sigma)") %>% 
+         strip   = "y %~% Normal(mu, sigma)") %>% 
   
   ggplot(aes(x = x, y = density)) +
   geom_area(fill = ghibli_palette("SpiritedMedium")[3]) +
@@ -416,41 +412,7 @@ tibble(x = 0:10) %>%
         strip.background = element_rect(fill = ghibli_palette("SpiritedMedium")[7])) +
   facet_wrap(~ strip, labeller = label_parsed)
 ```
-
-### 10.2.2 Linking linear models to distributions
-Models generally follow the form
-$$
-\begin{align*}
-  y_{i} & \sim \text{Some distribution}(\theta_{i}, \phi)\\
-  f(\theta_{i}) & = \alpha + \beta(x_{i} - \bar{x})
-\end{align*}
-$$
-Where $\theta_{i}$ is a parameter of central interest and $\phi$ is a placeholder for any other parameters necessary for the likelihood but not typically of primary substantive interest.
-
-Logit link maps a parameter that is defined as a probability mass, and therefore constrained to lie between zero and one, onto a linear model that can take on any real value. This link is extremely common when working with binomial GLMs.
-$$
-\begin{align}
-y_{i} & = \text{Binomial}(n, p_{i}) \\
-\text{logit}(p_{i}) & = \alpha + \beta x_{i}
-\end{align}
-$$
-
-The logit function is defined as the log-odds
-$$
-\text{logit}(p_{i}) = \text{log} \frac{p_{i}}{1 - p_{i}}
-$$
-
-The odds of an event are just the probability it happens divided by the probability it does not happen. So really all that is being stated here is:
-$$
-\text{log} \frac{p_{i}}{1 - p_{i}} = \alpha + \beta x_{i}
-$$
-
-We can solve for $p_{i}$ in terms of the linear model
-$$
-p_{i} = \frac{\text{exp}(\alpha + \beta x_{i})}{1 + \text{exp}(\alpha + \beta x_{i})}
-$$
-
-We'll use the formula brms::inv_logit_scaled() when making sense of logistic regression models
+### 10.2.2 Linking linear models to distributions.
 ```{r}
 # first, we'll make data for the horizontal lines
 alpha <- 0
@@ -458,14 +420,14 @@ beta <- 4
 
 lines <-
   tibble(x = seq(from = -1, to = 1, by = .25)) %>% 
-  mutate("log-odds" = alpha + x * beta,
+  mutate(`log-odds` = alpha + x * beta,
          probability = exp(alpha + x * beta) / (1 + exp(alpha + x * beta)))
 
 # now we're ready to make the primary data
 beta <- 2
-d <- 
+d <-
   tibble(x = seq(from = -1.5, to = 1.5, length.out = 50)) %>% 
-  mutate("log-odds" = alpha + x * beta,
+  mutate(`log-odds` = alpha + x * beta,
          probability = exp(alpha + x * beta) / (1 + exp(alpha + x * beta)))
 
 # now we make the individual plots
@@ -475,8 +437,7 @@ p1 <-
   geom_hline(data = lines,
              aes(yintercept = `log-odds`),
              color = ghibli_palette("YesterdayMedium")[6]) +
-  geom_line(linewidth = 1.5, 
-            color = ghibli_palette("YesterdayMedium")[3]) +
+  geom_line(linewidth = 1.5, color = ghibli_palette("YesterdayMedium")[3]) +
   coord_cartesian(xlim = c(-1, 1)) +
   theme(panel.background = element_rect(fill = ghibli_palette("YesterdayMedium")[5]),
         panel.grid = element_blank())
@@ -487,29 +448,18 @@ p2 <-
   geom_hline(data = lines,
              aes(yintercept = probability),
              color = ghibli_palette("YesterdayMedium")[6]) +
-  geom_line(linewidth = 1.5,
-            color = ghibli_palette("YesterdayMedium")[3]) +
+    geom_line(linewidth = 1.5, color = ghibli_palette("YesterdayMedium")[3]) +
   coord_cartesian(xlim = c(-1, 1)) +
   theme(panel.background = element_rect(fill = ghibli_palette("YesterdayMedium")[7]),
         panel.grid = element_blank())
 
 # finally, we're ready to mash the plots together and behold their nerdy glory
 (p1 | p2) +
-  plot_annotation(
-    subtitle = "The logit link transforms a linear model (left) into a probability (right).")
+  plot_annotation(subtitle = "The logit link transforms a linear model (left) into a probability (right).")
 ```
-
-The second common link function is the log link. This link function maps a parameter that is defined over only positive real values onto a linear model. For example, suppose we want to model the standard deviation $\sigma$ of a Gaussian distribution so it is a function of a predictor variable $x$. The parameter $\sigma$ must be positive, because a standard deviation cannot be negative nor can it be zero. The model might look like:
-$$
-\begin{align}
-y_{i} & \sim \text{Normal}(\mu, \sigma_{i}) \\
-\text{log}(\sigma_{i}) & = \alpha + \beta x_{i}
-\end{align}
-$$
 
 ```{r}
 set.seed(10)
-
 (
   d <-
     tibble(x = rep(0:1, each = 100)) %>% 
@@ -534,8 +484,6 @@ d %>%
         panel.grid = element_blank())
 ```
 
-Even though the means of y are the same for both levels of the x dummy, the variance for x == 1 is substantially larger than that for x == 0. Let’s open brms.
-
 ```{r}
 library(brms)
 ```
@@ -544,10 +492,11 @@ library(brms)
 b10.1 <-
   brm(data = d,
       family = gaussian,
-      bf(y ~ 1, sigma ~ 1 + x),
+      bf(y ~ 1, 
+         sigma ~ 1 + x),
       prior = c(prior(normal(100, 5), class = Intercept),
                 prior(normal(2.70805, 0.5), class = Intercept, dpar = sigma),
-                prior(normal(0, 0.5), class = b, dpar = sigma)),
+                prior(normal(0, .5), class = b, dpar = sigma)),
       seed = 10,
       file = "fits/b10.01")
 ```
@@ -560,8 +509,6 @@ print(b10.1)
 post <- as_draws_df(b10.1)
 head(post)
 ```
-
-With the samples in hand, we’ll use the model formula to compute the model-implied standard deviations of y based on the x dummy and then examine them in a plot.
 
 ```{r}
 post %>% 
@@ -583,32 +530,25 @@ post %>%
         panel.grid = element_blank())
 ```
 
-If we looked back at the data, those SD estimates are right about what we’d expect.
 ```{r}
 d %>% 
   group_by(x) %>% 
-  summarise(sd = sd(y) %>% round(digits = 1)) 
+  summarise(sd = sd(y) %>% round(digits = 1))
 ```
-
-What the log link effectively assumes is that the parameter’s value is the exponentiation of the linear model. Solving $\text{log}(\sigma_{i}) = (\alpha + \beta x_{i})$ for $\sigma_{i}$ yields the inverse link:
-$$
-\sigma_{i} = \text{exp}(\alpha + \beta x_{i})
-$$
-
 
 ```{r}
 # first, we'll make data that'll be make the horizontal lines
 alpha <- 0
-beta <- 2
+beta  <- 2
 
 lines <-
-  tibble(`log-measurement` = -3:3,
+  tibble(`log-measurement`      = -3:3,
          `original measurement` = exp(-3:3))
 
 # now we're ready to make the primary data
 d <-
   tibble(x = seq(from = -1.5, to = 1.5, length.out = 50)) %>% 
-  mutate(`log-measurement` = alpha + x * beta,
+  mutate(`log-measurement`      = alpha + x * beta,
          `original measurement` = exp(alpha + x * beta))
 
 # now we make the individual plots
