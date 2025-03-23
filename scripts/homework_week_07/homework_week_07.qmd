@@ -1,0 +1,331 @@
+---
+title: "Homework Week 7"
+format: html
+---
+
+:::question
+> 1. The data in data(bangladesh) are 1934 women from the 1989 Bangladesh Fertility Survey. For each woman, we know which district she lived in, her number of living.children, her age.centered, whether she lived in an urban center, and finally whether or not she used contraception (use.contraception).
+
+In the lecture, we estimated the total effect of urban residence on contraceptive use. Using the DAG from lecture, or your own version if you prefer, now estimate only the direct effect of urban residence on contraceptive use.
+
+```{r}
+data(bangladesh, package = "rethinking")
+
+d <- bangladesh
+
+d <-
+  d %>% 
+  mutate(
+    district = as.integer(district),
+    age.centered = rethinking::standardize(age.centered))
+
+rm(bangladesh)
+```
+
+```{r}
+get_prior(data = d,
+          family = bernoulli,
+          use.contraception ~ 1 + mo(living.children) + urban + age.centered + (1 | district))
+```
+
+```{r}
+b1_u_d <-
+  brm(data = d,
+      family = bernoulli,
+      use.contraception ~ 1 + mo(living.children) + urban + age.centered + (1 | district),
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b),
+                prior(dirichlet(1), class = simo, coef = moliving.children1),
+                prior(exponential(1), class = sd)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b1_u_d")
+
+b1_u_t <-
+  brm(data = d,
+      family = bernoulli,
+      use.contraception ~ 1 + urban + (1 | district),
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b),
+                prior(exponential(1), class = sd)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b1_u_t")
+```
+
+```{r}
+summary(b1_u_d)
+```
+```{r}
+summary(b1_u_t)
+```
+```{r}
+nd <-
+  tibble(district = c(1:53, 55:61),
+         age.centered = 0,
+         living.children = 2) %>% 
+  expand_grid(urban = c(0, 1))
+```
+
+```{r}
+sim_nd <-
+  nd %>% 
+  add_epred_draws(b1_u_d)
+
+sim_nd_summary <-
+  sim_nd %>% 
+  mean_hdci()
+
+line_data <-
+  tibble(urban = c(0, 1),
+         yintercept = c(sim_nd_summary %>% filter(urban == 0) %>% pull(.epred) %>% mean(),
+                        sim_nd_summary %>% filter(urban == 1) %>% pull(.epred) %>% mean()),
+         line_color = c("skyblue", "maroon"))
+```
+
+
+```{r}
+sim_nd_summary %>% 
+  ggplot(aes(x = district, y = .epred, color = factor(urban))) +
+  geom_pointinterval(aes(ymin = .lower, ymax = .upper),
+                     interval_alpha = .4,
+                     shape = 1) +
+  geom_hline(data = line_data,
+             aes(yintercept = yintercept),
+             linetype = "dashed") +
+  facet_wrap(~ urban, nrow = 1,
+             labeller = labeller(urban = c("0" = "Rural", "1" = "Urban"))) +
+  scale_color_manual(values = c("0" = "skyblue", "1" = "maroon")) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = "none") +
+  labs(y = "P(contraception)",
+       x = "District")
+```
+
+```{r}
+sim_nd %>% 
+  ungroup() %>% 
+  select(urban, .epred) %>% 
+  pivot_wider(names_from = urban,
+              values_from = .epred,
+              names_prefix = "urban_") %>% 
+  unnest(cols = c(urban_0, urban_1)) %>% 
+  rename("rural" = "urban_0",
+         "urban" = "urban_1") %>% 
+  mutate(diff = urban - rural) %>% 
+  
+  ggplot() +
+  geom_density(aes(x = diff),
+               color = "skyblue") +
+  geom_vline(aes(xintercept = 0.167),
+             linetype = "dashed",
+             color = "gray") +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  labs(x = "Probability Difference (Urban - Rural)",
+       y = "Density")
+```
+
+:::question
+> 2. Using the same DAG as before, now estimate the effect of number of surviving children on contraceptive use. Obviously contraceptive use can also influence the number of surviving children. But leave that issue aside for the moment (it will return in the optional challenge further down)
+
+```{r}
+levels <- 0:3
+simplex_cumsum <- c(0, cumsum(c(0.78, 0.15, 0.07)))
+
+draws <-
+  as_draws_df(b1_u_d) %>% 
+  select(b_Intercept, bsp_moliving.children) %>% 
+  mutate(across(everything(), as.numeric))
+
+pred_logodds <- 
+  draws %>% 
+  crossing(living.children = levels) %>% 
+  mutate(effect = bsp_moliving.children * simplex_cumsum[living.children + 1],
+         logodds = b_Intercept + effect)
+
+pred_probs <-
+  pred_logodds %>% 
+  mutate(prob = plogis(logodds)) %>% 
+  group_by(living.children) %>% 
+  summarise(
+    median = median(prob),
+    lower = quantile(prob, 0.025),
+    upper = quantile(prob, 0.975)
+  )
+```
+
+```{r}
+ggplot(pred_probs, aes(x = living.children + 1, y = median)) +
+  geom_pointinterval(aes(ymin = lower, ymax = upper),
+                     interval_alpha = 0.5,
+                     interval_colour = "maroon",
+                     color = "maroon",
+                     shape = 1) +
+  labs(title = "Effect of Living Children on Contraceptive Use",
+       x = "Number of Living Children",
+       y = "Probability of Contraceptive Use") +
+  theme_bw() +
+  theme(panel.grid = element_blank())
+```
+
+:::question
+> 3-OPTIONAL CHALLENGE. Write a synthetic data simulation for this problem set, using the relationships in the DAG. The simulation should include district, urban, children, age, and (reported) contraceptive use. The best, and hardest, option is to make a dynamic population simulation, in which individuals age and produce children. In such a model, reciprocal causality between children and contraceptive use could exist. Whatever you decide, use a cross-section of the synthetic population to test your statistical models. When can they recover true effects?
+
+```{r}
+rm(list = ls())
+```
+
+```{r}
+sim_fertility <- function(
+    n_districts = 60, # number of districts
+    p_urban = runif(n_districts,0.1,0.2), # init prob woman moves to city
+    n_init = rep(100,n_districts), # init number of women in each district
+    f = c(rep(0,20),rep(0.5,20),rep(0,100)), # fertility schedule by age
+    m = c(0.2,rep(0.01,19),seq(from=0.01,to=0.5,len=100)), # mortality schedule
+    
+    # causal effects
+    bKC = rep(0.01,20), # prob adopt C at each parity starting at zero
+    bDC = runif(n_districts,0,0.1), # district offsets for prob adopt C
+    bUC = 0.1, # effect of urban on prob use C at all parities
+    
+    # sim controls
+    t_max = 1e2, # number of years to simulate population
+    n_max = 1e4 # maximum population size across all districts
+) {
+  # init population
+  # all women start at age 1
+  # so need to run sim until reach stable age distribution
+  n <- sum(n_init)
+  age <- rep(NA,n_max)
+  age[1:n] <- 1 # newborns
+  D <- rep(NA,n_max) # districts
+  D[1:n] <- rep(1:n_districts,times=n_init)
+  K <- rep(NA,n_max)
+  K[1:n] <- 0 # no kids yet
+  U <- rep(NA,n_max)
+  U[1:n] <- rbern(n,p_urban[D[1:n]])
+  C <- rep(NA,n_max)
+  C[1:n] <- rep(0,n) # no one starts using contraception
+  
+  # sim loop
+  for ( i in 1:t_max ) {
+    # loop over living women
+    n_births <- 0
+    for ( j in 1:n_max ) {
+      if ( !is.na(age[j]) ) {
+        # she's alive!
+        # survive to next year?
+        if ( runif(1) > m[age[j]] ) {
+          age[j] <- age[j] + 1 # get older
+          # adopt C?
+          if ( C[j]==0 ) {
+            pC <- bKC[K[j]+1] + bDC[D[j]] + bUC*U[j]
+            if ( pC > 1 ) pC <- 1
+            C[j] <- rbern(1,pC)
+            }
+          if ( C[j] ==0 ) {
+            # birth?
+            if ( runif(1) < f[age[j]] ) {
+              K[j] <- K[j] + 1
+              # is female?
+              if ( runif(1) < 0.5 ) {
+                # add to tally to update at end of this loop
+                n_births <- n_births + 1
+              }
+            }
+            }
+          } else {
+            # death - remove from population
+            age[j] <- NA
+          }
+        }
+      }#j
+    
+    # now add new women to population
+    open_spots <- which(is.na(age))
+    n_births <- min( n_births , length(open_spots) ) #bound population
+    if ( n_births > 0 )
+      for ( j in 1:n_births ) {
+        k <- open_spots[j]
+        age[k] <- 1
+        C[k] <- 0
+        D[k] <- sample(60,size=1)
+        U[k] <- rbern(1, p_urban[D[k]] )
+        K[k] <- 0
+        }#j
+    }#i
+  out <- data.frame(
+    A = age, U = U, C = C, K = K, D = D
+    )
+  # remove empty slots in population
+  x <- which(!is.na(out$A))
+  out <- out[x,]
+  return(out)
+}
+```
+
+
+```{r}
+sim_dat <- sim_fertility()
+```
+
+```{r}
+sim_dat %>% 
+  ggplot() +
+  geom_point(aes(x = A, y = K),
+             shape = 1,
+             size = 1.5,
+             color = "maroon") +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  labs(x = "age",
+       y = "children")
+```
+
+```{r}
+dat <- tibble(
+  C = sim_dat$C,
+  D = sim_dat$D,
+  nD = max(sim_dat$D),
+  U = sim_dat$U
+)
+
+b3_global_int <-
+  brm(
+    data = dat,
+    family = bernoulli,
+    C ~ 1 + U + (1 + U | D),
+    prior = c(
+      prior(normal(0, 1), class = Intercept),
+      prior(normal(0, 1), class = b),
+      prior(exponential(1), class = sd),
+      prior(lkj(4), class = "cor")
+    ),
+    iter = 4000, warmup = 2000, chains = 4, cores = 4,
+    seed = 1234,
+    file = "fits/b3_global_int")
+
+b3_non_global_int <-
+  brm(
+    data = dat,
+    family = bernoulli,
+    C ~ 0 + (1 + U | D),
+    prior = c(
+      prior(exponential(1), class = sd),
+      prior(lkj(4), class = "cor")
+    ),
+    iter = 4000, warmup = 2000, chains = 4, cores = 4,
+    seed = 1234,
+    file = "fits/b3_non_global_int")
+```
+
+```{r}
+summary(b3_global_int)
+```
+
+```{r}
+summary(b3_non_global_int)
+```
+

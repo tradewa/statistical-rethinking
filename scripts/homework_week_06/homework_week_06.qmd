@@ -1,0 +1,220 @@
+---
+title: "Homework Week 6"
+format: html
+---
+
+:::question
+> 1. Conduct a prior predictive simulation for the Reedfrog model. By this I mean to simulate the prior distribution of tank survival probabilities $\sigma_j$. Start by using this prior
+$$
+\begin{align}
+\alpha_j & \sim \text{Normal}(\bar{\alpha}, \sigma) \\
+\bar{\alpha} & \sim \text{Normal}(0, 1) \\
+\sigma & \sim \text{Exponential}(1)
+\end{align}
+$$
+
+Be sure to transform the $\alpha_j$ values to the probability scale for plotting and summary. How does increasing the width of the prior on $\sigma$ change the prior distribution of $\alpha_j$? You might try Exponential(10) and Exponential(0.1) for example.
+
+```{r}
+rm(list = ls())
+```
+
+
+```{r}
+theme_set(theme_bw())
+
+n <- 1000
+
+prior <-
+  tibble(a_bar = rnorm(n),
+         sigma_1 = rexp(n, 1),
+         sigma_0.1 = rexp(n, 0.1)) %>% 
+  mutate(a_j_1 = rnorm(n, mean = a_bar, sd = sigma_1),
+         a_j_0.1 = rnorm(n, mean = a_bar, sd = sigma_0.1))
+```
+
+```{r}
+prior %>% 
+  ggplot() + 
+  geom_density(aes(x = inv_logit(a_j_1))) +
+  geom_density(aes(x = inv_logit(a_j_0.1)), color = "blue") +
+  labs(x = "probability survival")
+```
+
+:::question
+> 2. Revisit the Reedfrog survival data. Start with the varying effects model from the book and lecture. Then modify it to estimate the causal effects of the treatment variables pred and size, including how size might modify the effect of predation. An easy approach is to estimate an effect for each combination of pred and size. Justify your model with a DAG of this experiment.
+
+```{r}
+data("reedfrogs", package = "rethinking")
+
+d <- reedfrogs %>% 
+  mutate(tank = 1:n())
+
+rm(reedfrogs)
+```
+
+```{r}
+glimpse(d)
+```
+
+```{r}
+b2_i <-
+  brm(data = d,
+      family = binomial,
+      surv | trials(density) ~ 1 + (1 | tank),
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(exponential(1), class = sd)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b2_i")
+```
+```{r}
+b2_p_s_ps <-
+  brm(data = d,
+      family = binomial,
+      surv | trials(density) ~ 1 + pred + size + pred:size + (1 | tank),
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b),
+                prior(exponential(1), class = sd)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b2_p_s_ps")
+```
+
+```{r}
+b2_i <- add_criterion(b2_i, "loo")
+b2_p_s_ps <- add_criterion(b2_p_s_ps, "loo")
+```
+
+```{r}
+loo_compare(b2_i, b2_p_s_ps, criterion = "loo")
+```
+
+```{r}
+post_b2_i <- 
+  b2_i %>% 
+  as_draws_df() %>% 
+  select(b_Intercept:sd_tank__Intercept) %>% 
+  mutate(model = "i")
+
+post_b2_p_s_ps <- 
+  b2_p_s_ps %>% 
+  as_draws_df() %>% 
+  select(b_Intercept:sd_tank__Intercept) %>% 
+  mutate(model = "p + s + ps")
+```
+
+
+```{r}
+post_all <- 
+  bind_rows(post_b2_i, post_b2_p_s_ps)
+```
+
+```{r}
+post_all %>% 
+  ggplot(aes(x = sd_tank__Intercept, color = model)) +
+  geom_density() +
+  theme(panel.grid = element_blank())
+```
+```{r}
+summary(b2_i)
+```
+
+```{r}
+summary(b2_p_s_ps)
+```
+
+```{r}
+nd <-
+  tibble(
+    tank = 1,
+    density = 1,
+    pred = c("no", "pred")) %>% 
+  expand_grid(size = c("big", "small")) %>% 
+  mutate(pred_size = paste(pred, size, sep = "_"))
+```
+
+
+```{r}
+epred <-
+  nd %>% 
+  add_epred_draws(b2_p_s_ps)
+
+epred %>% 
+  ggplot(aes(x = .epred, color = pred_size)) +
+  geom_density(aes(x = .epred)) +
+  labs(x = "survival probability") +
+  theme(panel.grid = element_blank())
+```
+
+:::question
+> 3-OPTIONAL CHALLENGE. Return to the Trolley data, data(Trolley), from Chapter 12. Define and fit a varying intercepts model for these data. By this I mean to add an intercept parameter for the individual participants to the linear model. Cluster the varying intercepts on individual participants, as indicated by the unique values in the id variable. Include action, intention, and contact as treatment effects on interest. Compare the varying intercepts model and a model that ignores individuals. What it the impact of individual variation in these data?
+
+```{r}
+rm(list = ls())
+
+data(Trolley, package = "rethinking")
+d <- Trolley %>% 
+  mutate(id = as.integer(as.factor(id)),
+         story = as.integer(as.factor(story)))
+
+rm(Trolley)
+```
+
+```{r}
+b3_f <-
+  brm(data = d,
+      family = cumulative,
+      response ~ 1 + action + intention + contact,
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b3_f")
+```
+
+```{r}
+b3_v_i <-
+  brm(data = d,
+      family = cumulative,
+      response ~ 1 + action + intention + contact + (1 | id),
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b),
+                prior(exponential(1), class = sd)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b3_v_i")
+```
+
+```{r}
+b3_v_i_s <-
+  brm(data = d,
+      family = cumulative,
+      response ~ 1 + action + intention + contact + (1 | id) + (1 | story),
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b),
+                prior(exponential(1), class = sd)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b3_v_i_s")
+```
+
+```{r}
+summary(b3_f)
+```
+
+```{r}
+summary(b3_v_i)
+```
+
+```{r}
+summary(b3_v_i_s)
+```
+
+```{r}
+b3_f <- add_criterion(b3_f, criterion = "loo")
+b3_v_i <- add_criterion(b3_v_i, criterion = "loo")
+b3_v_i_s <- add_criterion(b3_v_i_s, criterion = "loo")
+
+loo_compare(b3_f, b3_v_i, b3_v_i_s, criterion = "loo")
+```

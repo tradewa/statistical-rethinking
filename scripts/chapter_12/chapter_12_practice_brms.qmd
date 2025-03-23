@@ -1,0 +1,794 @@
+---
+title: "Chapter 12 Practice BRMS"
+format: html
+---
+
+:::question
+> 12E1. What is the difference between an ordered categorical variable and an unordered one? Define and then give an example of each
+
+Ordered categorical variable is categorical variable that has meaningful order or ranking, but the differences between the categories are not numerically different. For example ordered categorical variable are student_understanding with value from low to high: {Not understand, Partially understand, Fully understand}
+
+:::question
+> 12E2. What kind of link function does an ordered logistic regression employ? How does it differ from an ordinary logit link?
+
+Link function for ordered logistic regression is the cumulative logit. The difference with normal logit is the cumulative logit calculates the probability for all events less than particular value as opposed to normal logit which calculates the probability for a specific value.
+
+
+:::question
+> 12E3. When count data are zero-inflated, using a model that ignores zero-inlation will tend to induce which kind of inferential errors?
+
+The error that will be induced if we ignore zero-inflation is that we will underestimate the rate of count data because we don't give any explanation about the event that cause zero-inflation
+
+:::question
+> Over-dispersion is common in count data. Give an example of a natural process that might produce over-dispersed counts. Can you also give an example of a process that might produce under-dispersed counts?
+
+Over-dispersion: Natural process that might produce over-dispersed counts are for example different production of seeds for plants with same species under different condition
+
+Under-dispersion: Under-dispersion occurs when the observed variance is less than what is expected under Poisson distribution (where variance equals the mean). This can happen if event is synchronized
+
+:::question
+> 12M1. At a certain university, employees are annually rated from 1 to 4 on their productivity, with 1 being least productive and 4 most productive. In a certain department at this certain university in a certain year, the numbers of employees receiving each rating where (from 1 to 4): 12, 36, 7, 41. Compute the log cumulative odds of each rating.
+
+```{r}
+d <-
+  tibble(rating = 1:4,
+         count = c(12, 36, 7, 41)) %>% 
+  mutate(prob_k = count / sum(count),
+         cum_count = cumsum(count),
+         cum_prob = cum_count / sum(count),
+         cum_odds = cum_prob / (1 - cum_prob),
+         log_cum_odds = log(cum_odds))
+```
+
+:::question
+> 12M2. Make a version of Figure 12.5 for the employee ratings data given just above
+
+```{r}
+text <-
+  tibble(text = 1:4,
+         rating = seq(from = 1.25, to = 4.25, by = 1),
+         cum_prob = d$cum_prob - 0.005)
+
+d %>% 
+  ggplot(aes(x = rating, y = cum_prob, 
+             color = cum_prob, fill = cum_prob)) +
+  geom_line(color = canva_pal("Green fields")(4)[1]) +
+  geom_point(shape = 21, color = "grey92", size = 2.5,
+             stroke = 1) +
+  geom_linerange(aes(ymin = 0, ymax = cum_prob),
+                 alpha = 1/2, 
+                 color = canva_pal("Green fields")(4)[1]) +
+  geom_linerange(aes(x = rating,
+                     ymin = ifelse(rating == 1, 0,
+                                   cum_prob - prob_k),
+                     ymax = cum_prob),
+                 color = "black") +
+  # number annotation
+  scale_fill_gradient(low = canva_pal("Green fields")(4)[4],
+                      high = canva_pal("Green fields")(4)[1]) +
+  scale_color_gradient(low = canva_pal("Green fields")(4)[4],
+                      high = canva_pal("Green fields")(4)[1]) +
+  scale_x_continuous(breaks = 1:4) +
+  scale_y_continuous("cumulative proportion",
+                     breaks = c(0, .5, 1),
+                     limits = c(0, 1.0001)) +
+  theme(axis.ticks = element_blank(),
+        axis.title.y = element_text(angle = 90),
+        legend.position = "none")
+```
+
+:::question
+> 12M3. Can you modify the derivation of the zero-inflated Poisson distribution (ZIPoisson) from the chapter to construct a zero-inflated binomial distribution?
+
+Assume the process that generates zero-inflated binomial distribution (ZIB) is manufacturing machine to produce components and sometimes the machine brokes and produce zero components.
+
+Formula for zero value:
+$$
+\begin{align}
+\text{Pr}(0|\pi, p, n, k) & = \text{Pr}(broke | \pi) + \text{Pr}(work|\pi) * \text{Pr}(0|p, n, k) \\
+\text{Pr}(0|\pi, p, n, k) & = \pi + (1 - \pi) (\frac{n}{k}) \ p^k \ (1-p)^{n - k} \\
+\text{Pr}(0|\pi, p, n, k) & = \pi + (1 - \pi) (1-p)^n
+\end{align}
+$$
+
+Formula for non-zero value
+$$
+\begin{align}
+\text{Pr}(y > 0 | \pi, p, n, k) & = \pi + (1 - \pi) (\frac{n}{k}) \ p^k \ (1-p)^{n - k} \\
+\end{align}
+$$
+
+:::question
+> 12H1. In 2014, a paper was published that was entitled “Female hurricanes are deadlier than male hurricanes.”191 As the title suggests, the paper claimed that hurricanes with female names have caused greater loss of life, and the explanation given is that people unconsciously rate female hurricanes as less dangerous and so are less likely to evacuate. Statisticians severely criticized the paper after publication. Here, you’ll explore the complete data used in the paper and consider the hypothesis that hurricanes with female names are deadlier.
+Acquaint yourself with the columns by inspecting the help ?Hurricanes. In this problem, you’ll focus on predicting deaths using femininity of each hurricane’s name. Fit and interpret the simplest possible model, a Poisson model of deaths using femininity as a predictor. You can use quap or ulam. Compare the model to an intercept-only Poisson model of deaths. How strong is the association between femininity of name and deaths? Which storms does the model fit (retrodict) well? Which storms does it fit poorly?
+
+```{r}
+rm(list = ls())
+data(Hurricanes, package = "rethinking")
+d <- Hurricanes
+rm(Hurricanes)
+```
+
+```{r}
+d <-
+  d %>% 
+  mutate(f = rethinking::standardize(femininity))
+```
+
+```{r}
+b12h2a <-
+  brm(data = d,
+      family = poisson,
+      deaths ~ 1 + f,
+      prior = c(prior(normal(0, 10), class = Intercept),
+                prior(normal(0, 1), class = b)),
+      iter = 4000, warmup = 2000, cores = 4, chains = 4,
+      seed = 12,
+      file = "fits/b12h2a")
+```
+
+```{r}
+b12h2b <-
+  brm(data = d,
+      family = poisson,
+      deaths ~ 1,
+      prior = c(prior(normal(0, 10), class = Intercept)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 12,
+      file = "fits/b12h2b")
+```
+
+```{r}
+summary(b12h2a)
+```
+
+```{r}
+summary(b12h2b)
+```
+
+```{r}
+b12h2a <- add_criterion(b12h2a, criterion = "loo")
+b12h2b <- add_criterion(b12h2b, criterion = "loo")
+
+loo_compare(b12h2a, b12h2b, criterion = "loo")
+```
+
+```{r}
+nd <- tibble(f = seq(from = -2, to = 2, length.out = 100))
+
+epred <-
+  nd %>% 
+  add_epred_draws(b12h2a) %>% 
+  mean_qi()
+
+pred <-
+  nd %>% 
+  add_predicted_draws(b12h2a) %>% 
+  mean_qi()
+```
+
+
+```{r}
+  ggplot() +
+  geom_ribbon(data = pred,
+              aes(x = f, ymin = .lower, ymax = .upper),
+              fill = "lightgray") +
+  # geom_ribbon(data = epred,
+  #             aes(x = f, ymin = .lower, ymax = .upper),
+  #             fill = "darkgray") +
+  geom_line(data = pred,
+            aes(x = f, y = .prediction),
+            color = "black") +
+  geom_point(data = d,
+             aes(x = f, y = deaths),
+             shape = 1, size = 2, color = "blue") +
+  labs(x = "femininity (standardized)", y = "number of deaths") +
+  theme_minimal() +
+  scale_fill_viridis_d(option = "viridis")
+```
+
+:::question
+> 12H2. Counts are nearly always over-dispersed relative to Poisson. So fit a gamma-Poisson (aka negative-binomial) model to predict deaths using femininity. Show that the over-dispersed model no longer shows as precise a positive association between femininity and deaths, with an 89% interval that overlaps zero. Can you explain why the association diminished in strength?
+
+```{r}
+b12h2 <-
+  brm(data = d,
+      family = negbinomial,
+      deaths ~ 1 + f,
+      prior = c(prior(normal(3, 0.5), class = Intercept),
+                prior(gamma(.01, .01), class = shape)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 8,
+      seed = 12,
+      file = "fits/b12h2")
+```
+
+```{r}
+summary(b12h2)
+```
+
+```{r}
+nd <- tibble(f = seq(from = -2, to = 2, length.out = 100))
+
+epred <- 
+  nd %>% 
+  add_epred_draws(b12h2) %>% 
+  mean_qi(.width = .89)
+
+pred <- 
+  nd %>% 
+  add_predicted_draws(b12h2) %>% 
+  mean_qi(.width = .89)
+```
+
+```{r}
+ggplot() +
+  geom_ribbon(data = pred,
+              aes(x = f, ymin = .lower, ymax = .upper),
+              fill = "lightgray") +
+  # geom_ribbon(data = epred,
+  #             aes(x = f, ymin = .lower, ymax = .upper),
+  #             fill = "darkgray") +
+  geom_line(data = epred,
+            aes(x = f, y = .epred)) +
+  geom_point(data = d,
+             aes(x = f, y = deaths),
+             shape = 1, size = 2, color = "blue") +
+  scale_y_continuous(breaks = seq(0, 250, by = 50)) +
+  theme_minimal()
+```
+
+:::question
+> 12H3. In the data, there are two measures of a hurricane’s potential to cause death: damage_norm and min_pressure. Consult ?Hurricanes for their meanings. It makes some sense to imagine that femininity of a name matters more when the hurricane is itself deadly. This implies an interaction between femininity and either or both of damage_norm and min_pressure. Fit a series of models evaluating these interactions. Interpret and compare the models. In interpreting the estimates, it may help to generate counterfactual predictions contrasting hurricanes with masculine and feminine names. Are the effect sizes plausible?
+
+```{r}
+d <-
+  d %>% 
+  mutate(d = rethinking::standardize(damage_norm),
+         p = rethinking::standardize(min_pressure))
+```
+
+```{r}
+b12h3_int_pressure <-
+  brm(data = d,
+      family = poisson,
+      deaths ~ 1 + f + p + f:p,
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b12h3_int_pressure")
+
+b12h3 <-
+  brm(data = d,
+      family = poisson,
+      deaths ~ 1 + f + p,
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b12h3")
+```
+
+```{r}
+summary(b12h3_int_pressure)
+```
+
+```{r}
+summary(b12h3)
+```
+
+```{r}
+b12h3_int_pressure <- add_criterion(b12h3_int_pressure, "loo")
+b12h3 <- add_criterion(b12h3, "loo")
+```
+
+```{r}
+loo_compare(b12h3_int_pressure, b12h3)
+```
+
+Because it's hard to interpret the interaction paremeter's it's better to create a counterfactual prediction
+
+```{r}
+minpress_seq <- seq(from = -3, to = 2, length.out = 30)
+
+# 'masculine' storms
+d_pred <- tibble(
+  f = -1,
+  p = minpress_seq
+)
+
+lambda_m <-
+  d_pred %>% 
+  add_epred_draws(b12h3_int_pressure) %>% 
+  mean_qi()
+
+# 'feminine' storms
+d_pred <- tibble(
+  f = 1,
+  p = minpress_seq
+)
+
+lambda_f <-
+  d_pred %>% 
+  add_epred_draws(b12h3) %>% 
+  mean_qi()
+```
+
+```{r}
+ggplot() +
+  geom_ribbon(data = lambda_f,
+              aes(x = p, ymin = sqrt(.lower), 
+                  ymax = sqrt(.upper)),
+              fill = "pink") +
+  geom_ribbon(data = lambda_m,
+              aes(x = p, ymin = sqrt(.lower), 
+                  ymax = sqrt(.upper)),
+              fill = "lightblue") +
+  geom_line(data = lambda_f,
+            aes(x = p, y = sqrt(.epred)),
+            color = "deeppink") +
+  geom_line(data = lambda_m,
+            aes(x = p, y = sqrt(.epred)),
+            color = "blue") +
+  geom_point(data = d,
+             aes(x = p, y = sqrt(deaths)),
+             color = ifelse(d$f > 0, "black", "lightblue")) +
+  labs(x = "Minimum Pressure", y = "sqrt(deaths)") +
+  theme_bw()
+```
+
+```{r}
+# interaction model
+b12h3_int_damage <-
+  brm(data = d,
+      family = poisson,
+      deaths ~ 1 + f + d + f:d,
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b12h3_int_damage")
+
+b12h3_damage <-
+  brm(data = d,
+      family = poisson,
+      deaths ~ 1 + f + d,
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b12h3_damage")
+```
+
+```{r}
+b12h3_int_damage <- add_criterion(b12h3_int_damage, "loo")
+b12h3_damage <- add_criterion(b12h3_damage, "loo")
+```
+
+```{r}
+loo_compare(b12h3_int_damage, b12h3_damage)
+```
+
+```{r}
+damage_seq <- seq(from = -.6, to = 5.5, length.out = 30)
+
+# 'masculine' storms
+d_pred <- tibble(
+  f = -1,
+  d = damage_seq
+)
+
+lambda_m <- 
+  d_pred %>% 
+  add_epred_draws(b12h3_int_damage) %>% 
+  mean_qi()
+
+# 'feminine' storms
+d_pred <- tibble(
+  f = 1,
+  d = damage_seq
+)
+
+lambda_f <-
+  d_pred %>% 
+  add_epred_draws(b12h3_int_damage) %>% 
+  mean_qi()
+```
+
+```{r}
+ggplot() +
+  geom_ribbon(
+    data = lambda_m,
+    aes(x = d, ymin = sqrt(.lower), ymax = sqrt(.upper)),
+    fill = "lightblue") +
+  geom_ribbon(
+    data = lambda_f,
+    aes(x = d, ymin = sqrt(.lower), ymax = sqrt(.upper)),
+    fill = "pink") +
+  geom_line(
+    data = lambda_m,
+    aes(x = d, y = sqrt(.epred)),
+    color = "blue") +
+  geom_line(
+    data = lambda_f,
+    aes(x = d, y = sqrt(.epred)),
+    color = "deeppink") +
+  geom_point(
+    data = d,
+    aes(x = d, y = sqrt(deaths)),
+    color = ifelse(d$f > 0, "black", "lightblue")) +
+  theme_bw()
+```
+
+```{r}
+summary(b12h3_int_damage)
+```
+
+:::question
+> 12H4. In the original hurricanes paper, storm damage (damage_norm) was used directly. This assumption implies that mortaility increases exponentially with a linear increase in storm strength, because a Poisson regression uses a log link. So it's worth exploring an alternative hypothesis: that the logarithm of storm strength is what matters. Explore this by using the logarithm of damage_norm as a predictor. Using the best model structure from the previous problem, compare a model that uses log(damage_norm) to a model that uses damage_norm directly. Compare their PSIS/WAIC values as well as their implied predictions. What do you conclude?
+
+```{r}
+d <-
+  d %>% 
+  mutate(log_damage_norm = log(damage_norm),
+         log_d = rethinking::standardize(log_damage_norm))
+```
+
+
+```{r}
+b12h4_int_logdamage <-
+  brm(data = d,
+      family = poisson,
+      deaths ~ 1 + f + log_d + f:log_d,
+      prior = c(prior(normal(0, 10), class = Intercept),
+                prior(normal(0, 1), class = b)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b12h4_int_logdamage")
+
+b12h4_logdamage <-
+  brm(data = d,
+      family = poisson,
+      deaths ~ 1 + f + log_d,
+      prior = c(prior(normal(0, 10), class = Intercept),
+                prior(normal(0, 1), class = b)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b12h4_logdamage")
+```
+
+```{r}
+b12h4_int_logdamage <- add_criterion(b12h4_int_logdamage, "loo")
+b12h4_logdamage <- add_criterion(b12h4_logdamage, "loo")
+
+loo_compare(b12h3_damage, b12h3_int_damage, b12h4_int_logdamage, b12h4_logdamage)
+```
+```{r}
+summary(b12h4_int_logdamage)
+```
+
+```{r}
+log_damage_seq <- seq(from = -3.2, to = 2, length.out = 30)
+
+# "masculine" storms
+d_pred <- tibble(
+  f = -1,
+  log_d = log_damage_seq
+)
+
+lambda_m <-
+  d_pred %>% 
+  add_epred_draws(b12h4_int_logdamage) %>% 
+  mean_qi()
+
+# "feminine" storms
+d_pred <- tibble(
+  f = 1,
+  log_d = log_damage_seq
+)
+
+lambda_f <-
+  d_pred %>% 
+  add_epred_draws(b12h4_int_logdamage) %>% 
+  mean_qi()
+```
+
+```{r}
+ggplot() +
+  geom_ribbon(
+    data = lambda_f,
+    aes(x = log_d, ymin = sqrt(.lower), ymax = sqrt(.upper)),
+    fill = "pink"
+  ) +
+  geom_ribbon(
+    data = lambda_m,
+    aes(x = log_d, ymin = sqrt(.lower), ymax = sqrt(.upper)),
+    fill = "lightblue"
+  ) +
+  geom_line(
+    data = lambda_f,
+    aes(x = log_d, y = sqrt(.epred)),
+    color = "deeppink"
+  ) +
+  geom_line(
+    data = lambda_m,
+    aes(x = log_d, y = sqrt(.epred)),
+    color = "blue"
+  ) +
+  geom_point(
+    data = d,
+    aes(x = log_d, y = sqrt(deaths)),
+    color = ifelse(d$f > 0, "black", "lightblue")
+  ) +
+  labs(x = "damage norm", y = "sqrt(deaths)") +
+  theme_bw()
+```
+
+:::question
+> 12H5. One hypothesis from developmental psychology, usually attributed to Carol Gilligan, proposes that women and men have different averate tendencies in moral reasoning. Like most hypotheses in social psychology, it is descriptive, not causal. The notion is that women are more concerned with care (avoiding harm), while men are more concerned with justice and rights. Evaluate this hypothesis, using the Trolley data, supposing that contact provides a proxy for physical harm. Are women more or less bothered by contact than are men, in these data? Figure out the model(s) that is needed to address this question.
+
+```{r}
+rm(list = ls())
+data(Trolley, package = "rethinking")
+```
+
+To see whether females in these data are more bothered scenarios involving the contact principle (contact == 1) we need an interaction effect. The reason is that just including a main effect of male only addresses whether men are likely to rate any scenario as more or less permissible. It doesn't address a gender difference in any particular principle.
+
+So we need an interaction male*contact, at least. But I'm going t omake a new variable female, so we can focus on females like the question asks. You can do it either way.
+
+```{r}
+d <- 
+  Trolley %>% 
+  mutate(female = 1 - male)
+
+rm(Trolley)
+```
+
+```{r}
+b12h5 <-
+  brm(data = d,
+      family = cumulative,
+      response ~ 1 + action + intention + contact + action:intention + contact:intention + female + female:contact,
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 4,
+      seed = 1234,
+      file = "fits/b12h5")
+```
+
+```{r}
+summary(b12h5)
+```
+Inspect the estimates for female (the main effect of being female on cumulative log-odds) and female:contact (the interaction effect of being both female and in a contact scenario). The main effect is negative, -0.61, and the interaction is positive 0.21.
+
+It will be easier to make the comparison between females and males, if we compute expected log-odds for both females and males, both with and without contact treatment. Let's just write our own link function for the linear model phi. You could also use link() as usual, but this way I get to show you another example of doing something for yourself.
+
+```{r}
+post <- tidy_draws(b12h5)
+
+phi.link <- function(A, I, C, f){
+  post$b_action * A + post$b_intention * I + 
+    post$b_contact * C + post$`b_action:intention` * A * I +
+    post$`b_intention:contact` * C * I + post$b_female * f +
+    post$`b_contact:female` * f * C
+}
+```
+
+```{r}
+female.noC <- phi.link(0, 0, 0, 1)
+female.C <- phi.link(0, 0, 1, 1)
+male.noC <- phi.link(0, 0, 0, 0)
+male.C <- phi.link(0, 0, 1, 0)
+```
+
+```{r}
+female.diff <- as_tibble(female.C - female.noC)
+male.diff <- as_tibble(male.C - male.noC)
+```
+
+```{r}
+bind_rows(
+  female.diff %>% 
+    summarise_draws() %>% 
+    mutate(name = "female diff"),
+  male.diff %>% 
+    summarise_draws() %>% 
+    mutate(name = "male diff")
+) %>% 
+  relocate(name, .before = everything()) %>% 
+  select(name, mean, sd, q5, q95) %>% 
+  mutate_if(is.double, round, digits = 2)
+```
+
+So females are actually less bothered by contact, in the sense that their log-odds decline less than that of males.
+
+So we have to conclude that females are less bothered by contact than are males. But on the other hand, females are more bothered by all of the principles than are males, on average. So it may be that females are just hitting a floor effect here, such they can't be as bothered as males are, because males start out rating everything as more permissible, on average.
+
+It'd also help to plot the predictions, like the example in Chapter 12. Here's the code to produce a prediction for action == 0, intention == 0, contact == 0. You can change the kA, kI, and kC values to produce other plots.
+
+:::question
+> 12H6. The data in data(Fish) are records of visits to a national park. See ?Fish for details. The question of interest is how many fish an average visitor takes per hour, when fishing. The problem is that not everyone tried to fish, so the fish_caught numbers are zero-inflated. As with the monks example in the chapter, there is a process that determines who is fishing (working) and another process that determines fish per hour (manuscripts per day), conditional on fishing (working). We want to model both. Otherwise we’ll end up with an underestimate of rate of fish extraction from the park. 
+
+You will model these data using zero-inflated Poisson GLMs. Predict fish_caught as a function of any of the other variables you think are relevant. One thing you must do, however, is use a proper Poisson offset/exposure in the Poisson portion of the zero-inflated model. Then use the hours variable to construct the offset. This will adjust the model for the differing amount of time individuals spent in the park.
+
+```{r}
+rm(list = ls())
+data(Fish, package = "rethinking")
+
+d <- Fish
+rm(Fish)
+```
+
+```{r}
+d <-
+  d %>% 
+  mutate(log_hours = log(hours))
+```
+
+```{r}
+formula <-
+  bf(fish_caught ~ 1 + persons + child + log_hours,
+     zi ~ 1 + persons + child)
+
+priors <- get_prior(formula,
+                    data = d,
+                    family = zero_inflated_poisson())
+```
+
+```{r}
+b12h6 <-
+  brm(data = d,
+      family = zero_inflated_poisson(),
+      bf(fish_caught ~ persons + child + offset(log_hours),
+         zi ~ persons + child),
+      prior = c(prior(normal(0, 10), class = Intercept),
+                prior(normal(0, 1), class = b, coef = persons),
+                prior(normal(0, 1), class = b, coef = child),
+                prior(normal(0, 10), class = Intercept, dpar = zi),
+                prior(normal(0, 1), class = b, dpar = zi, coef = persons),
+                prior(normal(0, 1), class = b, dpar = zi, coef = child)),
+      iter = 10000, warmup = 2000, chains = 4, cores = 4,
+      seed = 123,
+      file = "fits/b12h6"
+      )
+```
+
+```{r}
+summary(b12h6)
+```
+
+```{r}
+m2a <- ulam(
+  alist(
+    fish_caught ~ dzipois(p, mu),
+    logit(p) <- a0 + bp0 * persons + bc0 * child,
+    log(mu) <- a + bp * persons + bc * child + log_hours,
+    c(a0, a) ~ dnorm(0, 10),
+    c(bp0, bc0, bp, bc) ~ dnorm(0, 1)
+  ),
+  data = d, iter = 1e4, chains = 2, seed = 123
+)
+```
+
+```{r}
+precis(m2a)
+```
+
+```{r}
+# new data
+pred_dat <- 
+  tibble(
+    log_hours = log(1), # note that this is zero, the baseline rate
+    persons = 1,
+    child = 0
+  )
+
+# sim predictions - want expected number of fish, but must use both processes
+fish_link <- 
+  add_epred_draws(pred_dat, b12h6) %>% 
+  mean_qi(.width = .89)
+
+```
+
+:::question
+> 12H7. In the trolley data we saw how education level (modeled as an ordered category) is associated with responses. But is this association causal? One plausible confound is that education is also associated with age, through a causal process: People are older when they finish school than when they begin it. Reconsider the Trolley data in this light. Draw a DAG that represents hypothetical causal relationships among response, education, and age. Which statistical model or models do you need to evaluate the causal influence of education on responses? Fit these model to the trolley data. What do you conclude about the causal relationships among these three variables?
+
+```{r}
+rm(list = ls())
+data(Trolley, package = "rethinking")
+
+d <- Trolley
+rm(Trolley)
+```
+
+```{r}
+d <-
+  d %>% 
+  mutate(edu_new = 
+           recode(edu,
+                  "Elementary School" = 1,
+                  "Middle School" = 2,
+                  "Some High School" = 3,
+                  "High School Graduate" = 4,
+                  "Some College" = 5,
+                  "Bachelor's Degree" = 6,
+                  "Master's Degree" = 7,
+                  "Graduate Degree" = 8) %>% 
+           as.integer())
+
+# what did we do?
+d %>% 
+  distinct(edu, edu_new) %>% 
+  arrange(edu_new)
+```
+
+```{r}
+library(gtools)
+set.seed(1805)
+delta <- rdirichlet(10, alpha = rep(2, 7))
+
+str(delta)
+```
+
+```{r}
+b12h7_e <- brm(
+  data = d,
+  family = cumulative(link = "logit"),
+  response ~ mo(edu_new),
+  prior = c(prior(normal(0, 1.5), class = Intercept),
+            prior(normal(0, 1), class = b),
+            prior(normal(0, .143), class = b, coef = moedu_new),
+            prior(dirichlet(2, 2, 2, 2, 2, 2, 2), class = simo, coef = moedu_new1)),
+  iter = 4000, warmup = 2000, chains = 4, cores = 4,
+  seed = 1234,
+  file = "fits/b12h7_e"
+)
+
+b12h7_ea <- brm(
+  data = d,
+  family = cumulative(link = "logit"),
+  response ~ mo(edu_new) + age,
+  prior = c(prior(normal(0, 1), class = Intercept),
+            prior(normal(0, 1), class = b),
+            prior(normal(0, .143), class = b, coef = moedu_new),
+            prior(dirichlet(2, 2, 2, 2, 2, 2, 2), class = simo, coef = moedu_new1)),
+  iter = 4000, warmup = 2000, chains = 4, cores = 4,
+  seed = 1234,
+  file = "fits/b12h7_ea"
+)
+```
+
+```{r}
+summary(b12h7_e)
+```
+
+```{r}
+summary(b12h7_ea)
+```
+
+```{r}
+b12h7_e <- add_criterion(b12h7_e, "loo")
+b12h7_ea <- add_criterion(b12h7_ea, "loo")
+```
+
+
+```{r}
+loo_compare(b12h7_e, b12h7_ea)
+```
+
+Extract posterior samples
+```{r}
+# Gather all parameters from both models
+params <- rbind(
+  gather_draws(b12h7_e) %>% mutate(model = "Education Only"),
+  gather_draws(b12h7_ea) %>% mutate(model = "Education + Age")
+)
+```
+
+```{r}
+# Plot
+ggplot(params_long, aes(x = .value, y = parameter, fill = model)) +
+  geom_violin(position = position_dodge(width = 0.9), alpha = 0.5) +
+  geom_point(data = params_long %>% group_by(model, parameter) %>% summarise(.value = mean(.value)),
+             aes(x = .value, y = parameter), position = position_dodge(width = 0.9), color = "black", size = 2) +
+  theme_minimal() +
+  labs(title = "Comparison of Parameter Estimates", x = "Parameter Value", y = "Parameter") +
+  theme(axis.text.y = element_text(size = 8))  # Adjust text size for better readability of parameter names
+```
+

@@ -73,7 +73,7 @@ homework_week_04_files/
 
 # Session Data files
 .RData
-.RDataTmp
+.RDataTmp*
 
 # User-specific files
 .Ruserdata
