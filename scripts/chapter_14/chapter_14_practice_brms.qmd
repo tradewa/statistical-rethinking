@@ -1,0 +1,280 @@
+---
+title: "Chapter 14 Practice BRMS"
+format: html
+---
+
+```{r}
+rm(list = ls())
+```
+
+
+```{r}
+library(tidyverse)
+library(brms)
+library(tidybayes)
+```
+### 14M1
+
+```{r}
+a <- 3.5 # average morning wait time
+b <- -1 # average difference afternoon wait time
+sigma_a <- 1 # std dev in intercepts
+sigma_b <- 0.5 # std dev in slopes
+rho <- -0 # correlation between intercepts and slopes
+
+# the next three lilnes of code simply combine the terms, above
+mu <- c(a, b)
+
+cov_ab <- sigma_a * sigma_b * rho
+sigma <- matrix(c(sigma_a^2, cov_ab,
+                  cov_ab, sigma_b^2), ncol = 2)
+
+library(tidyverse)
+
+sigmas <- c(sigma_a, sigma_b) # standard deviation
+rho <- matrix(c(1, rho,
+                rho, 1), nrow = 2)
+
+# now matrix multiply to get covariance matrix
+sigma <- diag(sigmas) %*% rho %*% diag(sigmas)
+
+# how many cafes would you like?
+n_cafes <- 20
+
+set.seed(5) # used to replicate example
+
+vary_effects <-
+  MASS::mvrnorm(n_cafes, mu, sigma) %>% 
+  data.frame() %>% 
+  set_names("a_cafe", "b_cafe")
+
+n_visits <- 10
+sigma <- 0.5 # std dev within cafes
+
+set.seed(6) # used to replicate example
+
+d <-
+  vary_effects %>% 
+  mutate(cafe = 1:n_cafes) %>% 
+  expand_grid(visit = 1:n_visits) %>% 
+  mutate(afternoon = rep(0:1, times = n() / 2)) %>% 
+  mutate(mu = a_cafe + b_cafe * afternoon) %>% 
+  mutate(wait = rnorm(n = n(), mean = mu, sd = sigma)) %>% 
+  select(cafe, everything())
+```
+
+
+```{r}
+# train model b (with rho = 0)
+b14m1 <-
+  brm(data = d,
+      family = gaussian,
+      wait ~ 1 + afternoon + (1 + afternoon | cafe),
+      prior = c(prior(normal(5, 2), class = Intercept),
+                prior(normal(-1, 0.5), class = b),
+                prior(exponential(1), class = sd),
+                prior(exponential(1), class = sigma),
+                prior(lkj(2), class = cor)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 867530,
+      file = "fits/b14m1")
+```
+```{r}
+b14m1 %>% 
+  spread_draws(cor_cafe__Intercept__afternoon) %>% 
+  
+  ggplot(aes(x = cor_cafe__Intercept__afternoon)) +
+  geom_density() +
+  theme_minimal()
+```
+
+### 14M2
+```{r}
+a <- 3.5 # average morning wait time
+b <- -1 # average difference afternoon wait time
+sigma_a <- 1 # std dev in intercepts
+sigma_b <- 0.5 # std dev in slopes
+rho <- -.7 # correlation between intercepts and slopes
+
+# the next three lines of code simply combine the terms, above
+mu <- c(a, b)
+
+cov_ab <- sigma_a * sigma_b * rho
+sigma <- matrix(c(sigma_a^2, cov_ab,
+                  cov_ab, sigma_b^2), ncol = 2)
+
+sigmas <- c(sigma_a, sigma_b) # standard deviation
+rho <- matrix(c(1, rho,
+                rho, 1), nrow = 2)
+
+# now matrix multiply to get covariance matrix
+sigma <- diag(sigmas) %*% rho %*% diag(sigmas)
+
+# how many cafes would you like?
+n_cafes <- 20
+
+set.seed(5) # used to replicate example
+
+vary_effects <-
+  MASS::mvrnorm(n_cafes, mu, sigma) %>% 
+  data.frame() %>% 
+  set_names("a_cafe", "b_cafe")
+
+n_visits <- 10
+sigma <- 0.5 # std dev within cafes
+
+set.seed(22) # used to replicate example
+
+d <-
+  vary_effects %>% 
+  mutate(cafe = 1:n_cafes) %>% 
+  expand_grid(visit = 1:n_visits) %>% 
+  mutate(afternoon = rep(0:1, times = n() / 2)) %>% 
+  mutate(mu = a_cafe + b_cafe * afternoon) %>% 
+  mutate(wait = rnorm(n = n(), mean = mu, sd = sigma)) %>% 
+  select(cafe, everything())
+```
+
+```{r}
+b14m2_no_corr <-
+  brm(data = d,
+      family = gaussian,
+      wait ~ 1 + afternoon + (1 + afternoon || cafe),
+      prior = c(prior(normal(0, 10), class = Intercept),
+                prior(normal(0, 10), class = b),
+                prior(cauchy(0, 1), class = sd),
+                prior(cauchy(0, 1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 8,
+      seed = 867530,
+      file = "fits/b14m2_no_corr")
+```
+
+
+```{r}
+b14m2_corr <- 
+  brm(data = d,
+      family = gaussian,
+      wait ~ 1 + afternoon + (1 + afternoon | cafe),
+      prior = c(prior(normal(0, 10), class = Intercept),
+                prior(normal(0, 10), class = b),
+                prior(cauchy(0, 1), class = sd),
+                prior(cauchy(0, 1), class = sigma),
+                prior(lkj(2), class = cor)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 8,
+      seed = 867530,
+      file = "fits/b14m2_corr")
+```
+
+```{r}
+b14m2_corr <- add_criterion(b14m2_corr, criterion = "waic")
+b14m2_no_corr <- add_criterion(b14m2_no_corr, criterion = "waic")
+```
+
+```{r}
+loo_compare(b14m2_corr, b14m2_no_corr, criterion = "waic")
+```
+
+
+### 14M3
+```{r}
+rm(list = ls())
+
+data(UCBadmit, package = "rethinking")
+d <-
+  UCBadmit %>% 
+  mutate(gid = ifelse(applicant.gender == "male", "1", "2"))
+
+rm(UCBadmit)
+```
+
+```{r}
+b12.01 <- read_rds("fits/b12.01.rds")
+```
+
+```{r}
+b14m3 <-
+  brm(data = d,
+      family = binomial,
+      admit | trials(applications) ~ 1 + gid + (1 + gid | dept),
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b),
+                prior(exponential(1), class = sd),
+                prior(lkj(2), class = cor)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 8,
+      seed = 14,
+      file = "fits/b14m3")
+```
+
+```{r}
+print(b12.01)
+```
+```{r}
+summary(b14m3)
+```
+
+```{r}
+b12.01$fit
+```
+
+```{r}
+b14m3$fit
+```
+
+### 14M4
+```{r}
+b11.11 <- read_rds("fits/b11.11.rds")
+b14.08 <- read_rds("fits/b14.08.rds")
+```
+
+```{r}
+b11.11 <- add_criterion(b11.11, criterion = "loo")
+b14.08 <- add_criterion(b14.08, criterion = "loo")
+```
+```{r}
+loo_compare(b11.11, b14.08)
+```
+
+```{r}
+data.frame(
+  Model = c("b11.11", "b14.08"),
+  looic = c(
+    b11.11$criteria$loo$estimates["looic", "Estimate"],
+    b14.08$criteria$loo$estimates["looic", "Estimate"]
+  ),
+  elpd_loo = c(
+    b11.11$criteria$loo$estimates["elpd_loo", "Estimate"],
+    b14.08$criteria$loo$estimates["elpd_loo", "Estimate"]
+  ),
+  p_loo = c(
+    b11.11$criteria$loo$estimates["p_loo", "Estimate"],
+    b14.08$criteria$loo$estimates["p_loo", "Estimate"]
+  )
+)
+```
+```{r}
+plot(b11.11$criteria$loo)  # histogram of k values
+plot(b14.08$criteria$loo)
+```
+
+```{r}
+b14.08 <- add_criterion(b14.08, "loo", reloo = TRUE)
+```
+
+```{r}
+plot(b14.08$criteria$loo)
+```
+
+### 14H1
+```{r}
+rm(list = ls())
+
+data(bangladesh, package = "rethinking")
+d <- bangladesh
+rm(bangladesh)
+```
+
+```{r}
+d$district_id <- as.integer(as.factor(d$district))
+sort(unique(d$district_id))
+```
+
