@@ -12,6 +12,7 @@ rm(list = ls())
 library(tidyverse)
 library(brms)
 library(tidybayes)
+library(patchwork)
 ```
 ### 14M1
 
@@ -276,5 +277,429 @@ rm(bangladesh)
 ```{r}
 d$district_id <- as.integer(as.factor(d$district))
 sort(unique(d$district_id))
+```
+
+```{r}
+b14h1 <-
+  brm(data = d,
+      family = bernoulli,
+      use.contraception ~ 1 + urban + (1 + urban | district_id),
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b),
+                prior(exponential(1), class = sd),
+                prior(lkj(2), class = cor)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 8,
+      seed = 14,
+      file = "fits/b14h1")
+```
+
+```{r}
+summary(b14h1)
+```
+
+```{r}
+# Chat GPT
+
+# Get posterior summaries of group-level effects
+coef_df <- coef(b14h1)$district_id %>%
+  as_tibble() %>%
+  tibble::rownames_to_column("district_id") %>%
+  rename(
+    intercept = Estimate.Intercept,
+    slope_urban = Estimate.urban
+  ) %>%
+  select(district_id, intercept, slope_urban)
+
+# Define inverse logit
+inv_logit <- function(x) plogis(x)
+
+# Add predicted probabilities
+coef_df <- coef_df %>%
+  mutate(
+    prob_rural = inv_logit(intercept),
+    prob_urban = inv_logit(intercept + slope_urban)
+  )
+
+ggplot(coef_df, aes(x = intercept, y = slope_urban)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  labs(
+    title = "District-level correlation: Intercept vs Urban Slope",
+    x = "Intercept (log-odds for rural)",
+    y = "Slope (urban effect)"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+fixef_df <- fixef(b14h1)  # This gives the fixed effects: beta_0, beta_1
+
+draws_data <- 
+  b14h1 %>% 
+  tidy_draws() %>%
+  select(.draw, b_Intercept, b_urban, contains("r_district_id[")) %>%
+  pivot_longer(cols = contains("r_district_id[")) %>%
+  mutate(
+    district_id = as.integer(str_extract(name, "\\d+")),
+    type = if_else(str_detect(name, "Intercept"), "Intercept", "Slope"),
+    fixed = if_else(type == "Intercept", b_Intercept, b_urban),
+    value = value + fixed
+  ) %>%
+  select(.draw, district_id, type, value) 
+
+draws_wide <-
+  draws_data %>%
+  pivot_wider(names_from = type, values_from = value)
+```
+
+```{r}
+draws_summary <- draws_wide %>%
+  group_by(district_id) %>%
+  summarise(
+    intercept_mean = mean(Intercept),
+    slope_mean = mean(Slope),
+    intercept_lower = quantile(Intercept, 0.025),
+    intercept_upper = quantile(Intercept, 0.975),
+    slope_lower = quantile(Slope, 0.025),
+    slope_upper = quantile(Slope, 0.975),
+    .groups = "drop"
+  )
+```
+
+```{r}
+ggplot(draws_summary, aes(x = intercept_mean, y = slope_mean)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  labs(
+    title = "District-level correlation: Intercept vs Urban Slope (with uncertainty)",
+    x = "Intercept (log-odds for rural)",
+    y = "Slope (urban effect)"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+nd <- 
+  tibble(
+  district_id = 1:60) %>% 
+  expand_grid(urban = 0:1)
+```
+
+
+```{r}
+plot_df <-
+  nd %>% 
+  add_epred_draws(b14h1) %>%
+  group_by(district_id, urban) %>% 
+  mean_hdci(.epred) %>% 
+  select(district_id:.upper) %>% 
+  mutate(urban = if_else(urban == 1, "urban", "rural")) %>% 
+  pivot_wider(names_from = urban, values_from = c(.epred, .lower, .upper)) %>% 
+  mutate(
+    .epred_diff = .epred_urban - .epred_rural,
+    .lower_diff = .lower_urban - .lower_rural,
+    .upper_diff = .upper_urban - .upper_rural
+  )
+  
+p1 <- 
+  plot_df %>% 
+  ggplot(aes(x = .epred_rural, y = .epred_urban)) +
+  geom_point(size = 2, shape = 1, color = "blue") +
+  geom_abline(slope = 1, linetype = "dashed", color = "gray") +
+  theme_minimal()
+
+p2 <- 
+  plot_df %>% 
+  ggplot(aes(x = .epred_rural, y = .epred_diff)) +
+  geom_point(size = 2, shape = 1, color = "blue") +
+  geom_hline(yintercept = 0, color = "gray", linetype = "dashed") +
+  theme_minimal()
+
+p1 + p2
+```
+
+### 14H3
+
+```{r}
+library(dagitty)
+
+dag <- dagitty("
+dag {
+  age.centered -> living.children
+  age.centered -> use.contraception
+  living.children -> use.contraception
+  urban -> use.contraception
+  district -> use.contraception
+}
+")
+
+plot(dag)
+```
+```{r}
+b14h3_a <-
+  brm(data = d,
+      family = bernoulli,
+      use.contraception ~ 1 + urban + age.centered + (1 + urban | district_id),
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b),
+                prior(exponential(1), class = sd),
+                prior(lkj(2), class = cor)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 8,
+      seed = 14,
+      file = "fits/b14h3_a")
+```
+
+```{r}
+b14h3_b <-
+  brm(data = d,
+      family = bernoulli,
+      use.contraception ~ 1 + urban + age.centered + living.children + (1 + urban | district_id),
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b),
+                prior(exponential(1), class = sd),
+                prior(lkj(2), class = cor)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 8,
+      seed = 14,
+      file = "fits/b14h3_b")
+```
+
+```{r}
+summary(b14h3_a)
+```
+
+```{r}
+summary(b14h3_b)
+```
+1. Posterior Prediction (with tidybayes)
+```{r}
+mean_age <- mean(d$age)  # for centering reference
+newdata <- tibble(
+  age.centered = 30 - mean_age,
+  urban = 1,
+  living.children = 2,
+  district_id = NA  # exclude group-level effects
+)
+```
+
+
+```{r}
+b14h3_b %>%
+  add_epred_draws(newdata = newdata, re_formula = NA) %>%
+  ggplot(aes(x = .epred)) +
+  geom_histogram(binwidth = 0.01, fill = "steelblue", color = "white") +
+  labs(title = "Posterior Prediction: Probability of Contraception Use",
+       x = "Predicted Probability", y = "Frequency") +
+  theme_minimal()
+```
+
+2. Mediation Plot via Posterior Simulation
+```{r}
+# Fit the mediator model
+b_mediator <- brm(
+  living.children ~ age.centered,
+  data = d,
+  family = poisson(),  # use negative binomial if overdispersed
+  prior = prior(normal(0, 1), class = b),
+  chains = 4, iter = 4000, warmup = 2000, cores = 4
+)
+```
+
+```{r}
+# Predict number of children for different ages
+age_seq <- tibble(age.centered = seq(-15, 15, length.out = 50))
+
+pred_children <- b_mediator %>%
+  add_epred_draws(newdata = age_seq, re_formula = NA) %>%
+  group_by(age.centered) %>%
+  summarise(.epred = mean(.epred))
+```
+
+```{r}
+# Predict contraception use for each age via predicted children
+# Join predicted children back with age
+age_seq_with_kids <- pred_children %>%
+  rename(living.children = .epred) %>%
+  mutate(urban = 1, district_id = NA)
+
+# Predict contraception
+b14h3_b %>%
+  add_epred_draws(newdata = age_seq_with_kids, re_formula = NA) %>%
+  group_by(age.centered) %>%
+  median_qi(.epred) %>%
+  ggplot(aes(x = age.centered, y = .epred)) +
+  geom_line(color = "steelblue") +
+  geom_ribbon(aes(ymin = .lower, ymax = .upper), fill = "steelblue", alpha = 0.3) +
+  labs(title = "Mediated Effect of Age via Children on Contraception Use",
+       x = "Age (centered)", y = "Predicted Probability of Use") +
+  theme_minimal()
+```
+
+3. Visualize Posterior Distribution
+```{r}
+b14h3_b %>%
+  spread_draws(b_age.centered, b_living.children, b_urban) %>%
+  select(-c(.chain, .iteration, .draw)) %>% 
+  pivot_longer(cols = everything()) %>%
+  ggplot(aes(x = value, y = name)) +
+  stat_halfeye(fill = "skyblue", .width = 0.89) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  labs(title = "Posterior Distributions of Coefficients (Model B)",
+       x = "Effect Size (Log-Odds)", y = NULL) +
+  theme_minimal()
+```
+
+```{r}
+# Compare the same parameter between models
+bind_rows(
+  tidy_draws(b14h3_a) %>% select(b_age.centered) %>% mutate(model = "Model A"),
+  tidy_draws(b14h3_b) %>% select(b_age.centered) %>% mutate(model = "Model B")
+) %>%
+  pivot_longer(cols = starts_with("b_")) %>%
+  ggplot(aes(x = value, fill = model)) +
+  stat_halfeye(position = "identity", alpha = 0.6) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  labs(title = "Effect of age.centered With and Without Mediator",
+       x = "Effect on Contraception Use (Log-Odds)", y = NULL) +
+  theme_minimal()
+```
+
+```{r}
+age_seq <- tibble(
+  age.centered = seq(-15, 15, by = 1),
+  urban = 1,
+  living.children = 2,
+  district_id = NA
+)
+
+b14h3_b %>%
+  add_epred_draws(newdata = age_seq, re_formula = NA) %>%
+  group_by(age.centered) %>%
+  median_qi(.epred) %>%
+  ggplot(aes(x = age.centered, y = .epred)) +
+  geom_line(color = "steelblue") +
+  geom_ribbon(aes(ymin = .lower, ymax = .upper), alpha = 0.3, fill = "skyblue") +
+  labs(title = "Predicted Probability of Contraception Use Across Age",
+       x = "Age (centered)", y = "Predicted Probability") +
+  theme_minimal()
+```
+
+### 14H4 & 14H5
+```{r}
+rm(list = ls())
+
+data(Oxboys, package = "rethinking")
+d <- Oxboys
+rm(Oxboys)
+```
+
+```{r}
+standardize <- function(x){
+  return (x - mean(x)) / sd(x)
+}
+```
+
+```{r}
+d <-
+  d %>% 
+  mutate(height = standardize(height))
+```
+
+```{r}
+b14h4 <-
+  brm(data = d,
+      family = gaussian,
+      height ~ 1 + age + (1 + age | Subject),
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b),
+                prior(exponential(1), class = sd),
+                prior(exponential(1), class = sigma),
+                prior(lkj(2), class = cor)),
+      iter = 4000, warmup = 2000, chains = 4, cores = 8,
+      seed = 14,
+      file = "fits/b14h4")
+```
+
+```{r}
+summary(b14h4)
+```
+
+```{r}
+draws_data <-
+  b14h4 %>% 
+  tidy_draws() %>%
+  select(.draw, b_Intercept, b_age, contains("r_Subject[")) %>% 
+  pivot_longer(cols = contains("r_subject[")) %>% 
+  mutate(
+    Subject = as.integer(str_extract(name, "\\d+")),
+    type = if_else(str_detect(name, "Intercept"), "Intercept", "Slope"),
+    fixed = if_else(type == "Intercept", b_Intercept, b_age),
+    value = value + fixed
+  ) %>%
+  select(.draw, Subject, type, value) 
+
+draws_wide <-
+  draws_data %>%
+  pivot_wider(names_from = type, values_from = value)
+
+draws_summary <- draws_wide %>%
+  group_by(Subject) %>%
+  summarise(
+    intercept_mean = mean(Intercept),
+    slope_mean = mean(Slope),
+    intercept_lower = quantile(Intercept, 0.025),
+    intercept_upper = quantile(Intercept, 0.975),
+    slope_lower = quantile(Slope, 0.025),
+    slope_upper = quantile(Slope, 0.975),
+    .groups = "drop"
+  )
+```
+
+```{r}
+draws_summary %>% 
+  ggplot(aes(x = intercept_mean, y = slope_mean)) +
+  geom_point(shape = 1, size = 2) +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  theme_minimal()
+```
+
+### 14H6
+```{r}
+draws_data <-
+  b14h4 %>% 
+  tidy_draws() %>% 
+  select(b_Intercept, b_age, sd_Subject__Intercept, 
+         sd_Subject__age, cor_Subject__Intercept__age, sigma) %>% 
+  pivot_longer(everything()) %>% 
+  group_by(name) %>% 
+  mean_hdci()
+```
+
+```{r}
+S <- matrix(
+  c(draws_data[[5, 2]]^2, 
+    draws_data[[5, 2]] * draws_data[[4, 2]] * draws_data[[3, 2]],
+    draws_data[[5, 2]] * draws_data[[4, 2]] * draws_data[[3, 2]],
+    draws_data[[4, 2]]^2),
+  nrow = 2)
+```
+
+```{r}
+ve <- as_tibble(MASS::mvrnorm(10, c(0, 0), Sigma = S)) %>% 
+  mutate(Subject = 1:10) %>% 
+  select(Subject, everything()) %>% 
+  rename(Intercept = V1,
+         Slope = V2) %>% 
+  mutate(
+    int_fixed = draws_data[[2, 2]],
+    slope_fixed = draws_data[[1, 2]]) %>% 
+  expand_grid(age = c(-1,1)) %>% 
+  mutate(height = int_fixed + Intercept + (slope_fixed + Slope) * age)
+```
+
+```{r}
+ve %>% 
+  ggplot() +
+  geom_line(aes(x = age, y = height, group = Subject)) +
+  theme_minimal()
 ```
 
