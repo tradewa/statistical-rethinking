@@ -1,0 +1,190 @@
+---
+title: "Homework Week 09"
+format: html
+---
+
+```{r}
+rm(list = ls())
+library(tidyverse)
+library(brms)
+library(tidybayes)
+```
+
+
+```{r}
+data(Achehunting, package = "rethinking")
+d <- Achehunting
+rm(Achehunting)
+
+d %>% glimpse()
+```
+```{r}
+# check NA values
+d %>% 
+  summarise(across(everything(),
+            ~ sum(is.na(.))))
+```
+
+```{r}
+d <-
+  d %>% 
+  mutate(log_age = log(age)) %>%
+  mutate(log_a = rethinking::standardize(log_age),
+         m = kg.meat / max(kg.meat),
+         h = rethinking::standardize(hours))
+         
+```
+
+```{r}
+d <-
+  d %>% 
+  mutate(s = if_else(m > 0, 1, 0))
+```
+
+```{r}
+get_prior(data = d,
+          family = bernoulli,
+          m ~ 1 + log_a)
+```
+
+```{r}
+h1a <-
+  brm(data = d,
+      family = bernoulli,
+      trip_success ~ 1 + log_a,
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 8,
+      seed = 9,
+      file = "fits/h1a")
+```
+
+```{r}
+summary(h1a)
+```
+
+```{r}
+nd <-
+  tibble(age = seq(from = 0.000001, to = 80, length.out = 200)) %>% 
+  mutate(log_a = rethinking::standardize(log(age)))
+
+post_h1a <-
+  nd %>% 
+  add_epred_draws(h1a) %>% 
+  mean_hdci()
+
+d %>% 
+  mutate(a_round = round(age / 10) * 10) %>% 
+  group_by(a_round) %>% 
+  summarise(p = mean(s)) %>% 
+  
+  ggplot() +
+  geom_line(aes(x = a_round, y = p),
+            color = "maroon") +
+  geom_point(data = post_h1a,
+             aes(x = age, y = .epred)) +
+  labs(x = "age (years)", y = "proportion successful") +
+  coord_cartesian(ylim = c(0, 1)) +
+  theme_minimal()
+```
+Create better model (better function of age towards success probability)
+
+$$
+p(A) = \alpha(1 - \text{exp}(-\beta_1A))\text{exp}(-\beta_2A)
+$$
+
+```{r}
+d <-
+  d %>% 
+  mutate(a2 = age / 80)
+
+h1b <-
+  brm(data = d,
+      family = bernoulli(link = "identity"),
+      bf(s ~ a * (1 - exp(-b1 * a2)) * exp(-b2 * a2),
+         a + b1 + b2 ~ 1,
+         nl = TRUE),
+      prior = c(prior(beta(4, 4), nlpar = "a"),
+                prior(exponential(2), nlpar = "b1"),
+                prior(exponential(2), nlpar = "b2")),
+      iter = 2000, warmup = 1000, chains = 4, cores = 8,
+      seed = 9,
+      file = "fits/h1b")
+```
+
+```{r}
+summary(h1b)
+```
+
+```{r}
+nd <-
+  tibble(age = seq(from = 0.000001, to = 80, length.out = 200)) %>% 
+  mutate(a2 = age / 80)
+
+post_h1b <-
+  nd %>% 
+  add_epred_draws(h1b) %>% 
+  mean_hdci()
+
+d %>% 
+  mutate(a_round = round(age / 10) * 10) %>% 
+  group_by(a_round) %>% 
+  summarise(p = mean(s)) %>% 
+  
+  ggplot() +
+  geom_line(aes(x = a_round, y = p),
+            color = "maroon") +
+  geom_point(data = post_h1b,
+             aes(x = age, y = .epred)) +
+  labs(x = "age (years)", y = "proportion successful") +
+  coord_cartesian(ylim = c(0, 1)) +
+  theme_minimal()
+```
+
+```{r}
+h1c <-
+  brm(data = d,
+      family = bernoulli(link = "identity"),
+      bf(s ~ a * (1 - exp(-b1 * a2))^g * exp(-b2 * a2),
+         a + b1 + b2 + g ~ 1,
+         nl = TRUE),
+      prior = c(prior(beta(4, 4), nlpar = "a"),
+                prior(exponential(2), nlpar = "b1"),
+                prior(exponential(2), nlpar = "b2"),
+                prior(exponential(0.5), nlpar = "g")),
+      iter = 2000, warmup = 1000, chains = 4, cores = 8,
+      seed = 9,
+      file = "fits/h1c")
+```
+
+```{r}
+post_h1c <-
+  nd %>% 
+  add_epred_draws(h1c) %>% 
+  mean_hdci()
+
+d %>% 
+  mutate(a_round = round(age / 10) * 10) %>% 
+  group_by(a_round) %>% 
+  summarise(p = mean(s)) %>% 
+  
+  ggplot() +
+  geom_line(aes(x = a_round, y = p),
+            color = "maroon") +
+  geom_point(data = post_h1c,
+             aes(x = age, y = .epred)) +
+  labs(x = "age (years)", y = "proportion successful") +
+  coord_cartesian(ylim = c(0, 1)) +
+  theme_minimal()
+```
+
+```{r}
+h1a <- add_criterion(h1a, criterion = "loo")
+h1b <- add_criterion(h1b, criterion = "loo")
+h1c <- add_criterion(h1c, criterion = "loo")
+```
+
+```{r}
+loo_compare(h1a, h1b, h1c, criterion = "loo")
+```
+
